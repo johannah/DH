@@ -1,5 +1,7 @@
 import matplotlib
 matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+
 import torch
 import torch.nn as nn
 from torch.nn.utils.clip_grad import clip_grad_norm
@@ -13,6 +15,7 @@ import time
 import os, sys
 import numpy as np
 import shutil
+from utils import find_latest_checkpoint, create_results_dir
 from IPython import embed 
 
 # Params for Denavit-Hartenberg Reference Frame Layout (DH)
@@ -41,7 +44,6 @@ def get_torch_attributes(np_attribute_dict, device='cpu'):
     for key, item in np_attribute_dict.items():
         pt_attribute_dict[key] = torch.FloatTensor(item).to(device)
     return pt_attribute_dict
-
 
 
 def load_data(data_file):
@@ -191,15 +193,59 @@ def train(data, step=0, n_epochs=10000):
             torch.save(model_dict, fbase+'.pt') 
             np.savez(fbase+'_losses.npz', train=losses['train'], valid=losses['valid'] )
 
+
+def eval_model(data, phases=['train', 'valid'], n=20, shuffle=False, teacher_force=False, lead_in=10):
+    """
+    phase: list containing phases to evaluate ['train', 'valid']
+    n int num examples to evaluate / plot. if None, all are plotted
+    """
+    for phase in phases:
+        # time, batch, features
+        n_samples = data[phase]['input'].shape[1]
+        indexes = np.arange(0, n_samples)
+        if shuffle:
+            random_state.shuffle(indexes)
+        # determine how many samples to take
+        if n == None:
+             n = n_samples
+        else:
+             n = min([n, n_samples])
+        st = 0
+        en = min([st+batch_size, n])
+        bs = en-st
+        while en <= n and bs > 0:
+            x = torch.FloatTensor(data[phase]['input'][:,indexes[st:en]]).to(device)
+            ee_target = torch.FloatTensor(data[phase]['ee_target'][:,indexes[st:en]]).to(device)
+
+            rec_angle = np.pi*(torch.tanh(forward_pass(x))+1)
+            ee_pred = angle2ee(rec_angle).detach().cpu().numpy()
+            plt.figure()
+            for ii in range(ee_pred.shape[1]):
+                plt.scatter(ee_pred[:,ii,0], ee_pred[:,ii,1])
+            fname = modelbase+'%s_%05d-%05d.png'%(phase,st,en)
+            print('plotting', fname)
+            plt.savefig(fname)
+            plt.close()
+            st = en
+            en = min([st+batch_size, n+1])
+            bs = en-st
+
+# tan(theta) = sin(theta)/cos(theta) 
  
 if __name__ == '__main__':
-    from datetime import date
     import argparse
     from glob import glob
-
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--exp_name', default='v2_lstm_ee')
+    parser.add_argument('--eval', default=False, action='store_true')
+    parser.add_argument('--load_model', default='')
+    args = parser.parse_args()
+    
+    load_from = 'results/21-01-21_v1_lstm_ee_03/'
     device = 'cuda'
+    results_dir = 'results'
     # set random seed to 0
-    exp_name = 'v1_lstm_ee'
+    exp_name = args.exp_name
     seed = 323
     grad_clip = 5
     hidden_size = 1024
@@ -209,23 +255,9 @@ if __name__ == '__main__':
     save_every_epochs = 10
     y_pred = torch.zeros((batch_size, output_size))
 
-    today = date.today()
-    today_str = today.strftime("%y-%m-%d")
-
     tdh = get_torch_attributes(DH_attributes_jaco27DOF, device)
-    exp_cnt = 0
-    savebase = os.path.join('results', '%s_%s_%02d'%(today_str, exp_name, exp_cnt))
-    while len(glob(os.path.join(savebase, '*.pt'))):
-         exp_cnt += 1
-         savebase = os.path.join('results', '%s_%s_%02d'%(today_str, exp_name, exp_cnt))
-    if not os.path.exists(savebase):
-        os.makedirs(savebase)
-    if not os.path.exists(os.path.join(savebase, 'python')):
-        os.makedirs(os.path.join(savebase, 'python'))
-        os.system('cp *.py %s/python'%savebase)
 
-
-    step = 0
+      
     losses = {'train':[], 'valid':[]}
 
     np.random.seed(seed)
@@ -234,10 +266,31 @@ if __name__ == '__main__':
 
     data = {'valid':{}, 'train':{}} 
     data['train']['input'], data['train']['target'], data['train']['ee_target'], data['valid']['input'], data['valid']['target'], data['valid']['ee_target'] = load_data('square.npy')
+    
 
     lstm = LSTM(input_size=input_size, hidden_size=hidden_size).to(device)
-    criterion = nn.MSELoss()
-    # use LBFGS as optimizer since we can load the whole data to train
-    opt = optim.Adam(lstm.parameters(), lr=0.001)
-    train(data, step,  n_epochs=10000)
+    if not args.eval and args.load_model == '':
+        savebase = create_results_dir(exp_name, results_dir=results_dir)
+        step = 0
+    else:
+        if os.path.isdir(args.load_model):
+            savebase = args.load_model
+            loadpath = find_latest_checkpoint(args.load_model)
+        else:
+            loadpath  = args.load_model
+            savebase = os.path.split(args.load_model)[0]
+            
+        modelbase = loadpath.replace('.pt', '_')
+        load_dict = torch.load(loadpath)
+        step = load_dict['train_cnt']
+        lstm.load_state_dict(load_dict['model'])
+
+    if args.eval:
+        eval_model(data, phases=['train', 'valid'], n=20, shuffle=False)
+    else:
+        criterion = nn.MSELoss()
+        # use LBFGS as optimizer since we can load the whole data to train
+        opt = optim.Adam(lstm.parameters(), lr=0.001)
+        train(data, step,  n_epochs=10000)
+     
 embed()
