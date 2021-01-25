@@ -15,7 +15,7 @@ import time
 import os, sys
 import numpy as np
 import shutil
-from utils import find_latest_checkpoint, create_results_dir
+from utils import find_latest_checkpoint, create_results_dir, plot_losses
 from IPython import embed 
 
 # Params for Denavit-Hartenberg Reference Frame Layout (DH)
@@ -51,7 +51,9 @@ def load_data(data_file):
     sq = np.load(data_file, allow_pickle=True)
     sq_fmt = []
     for episode in sq:
-        ep_fmt = [np.hstack((x['robot0_joint_pos_cos'], x['robot0_joint_pos_sin'], x['robot0_eef_pos'])) for x in episode]
+        #ep_fmt = [np.hstack((x['robot0_joint_pos_sin'], x['robot0_joint_pos_cos'], x['robot0_eef_pos'], x['robot0_joint_pos'])) for x in episode]
+        #ep_fmt = [np.hstack((x['robot0_joint_pos_sin'], x['robot0_joint_pos_cos'], x['robot0_eef_pos'])) for x in episode]
+        ep_fmt = [np.hstack((x['robot0_joint_pos_sin'], x['robot0_joint_pos_cos'], x['robot0_eef_pos'])) for x in episode]
         sq_fmt.append(ep_fmt)
     # t, batch, features
     sq_fmt = np.array(sq_fmt).swapaxes(0,1)
@@ -65,11 +67,14 @@ def load_data(data_file):
     v_inds = indexes[:ttb]
     train_input = sq_fmt[:-1,   t_inds, :input_size]
     train_target = sq_fmt[1:,   t_inds, :input_size]
-    train_ee_target = sq_fmt[1:,t_inds, input_size:]
+    train_ee_target = sq_fmt[1:,t_inds, input_size:input_size+3]
+#    train_jt_target = sq_fmt[1:,t_inds, input_size+3:]
 
     valid_input = sq_fmt[:-1,    v_inds, :input_size]
     valid_target = sq_fmt[1:,    v_inds, :input_size]
-    valid_ee_target = sq_fmt[1:, v_inds, input_size:]
+    valid_ee_target = sq_fmt[1:, v_inds, input_size:input_size+3]
+#    valid_jt_target = sq_fmt[1:, v_inds, input_size+3:]
+#   return train_input, train_target, train_ee_target, train_jt_target, valid_input, valid_target, valid_ee_target, valid_jt_target
     return train_input, train_target, train_ee_target, valid_input, valid_target, valid_ee_target
 
 def torch_dh_transform(dh_index,angles):
@@ -109,17 +114,27 @@ class LSTM(nn.Module):
         output = self.linear(h2_t)
         return output, h1_t, c1_t, h2_t, c2_t
 
-def forward_pass(x):
+def forward_pass(input_data, use_output=False, lead_in=3):
+    if use_output:
+        x = torch.zeros_like(input_data)
+        x[:lead_in] = input_data[:lead_in]
+    else:
+        # teacher force
+        x = input_data
+    
     bs = x.shape[1]
+    ts = x.shape[0]
     h1_tm1 = torch.zeros((bs, hidden_size)).to(device)
     c1_tm1 = torch.zeros((bs, hidden_size)).to(device)
     h2_tm1 = torch.zeros((bs, hidden_size)).to(device)
     c2_tm1 = torch.zeros((bs, hidden_size)).to(device)
-    ts = x.shape[0]
     y_pred = torch.zeros((ts, bs, output_size)).to(device)
-    for i in np.arange(ts):
+    for step_num, i in enumerate(np.arange(ts)):
         output, h1_tm1, c1_tm1, h2_tm1, c2_tm1 = lstm(x[i], h1_tm1, c1_tm1, h2_tm1, c2_tm1)
         y_pred[i] = y_pred[i] + output
+        if use_output and lead_in < step_num < ts-1:
+            # use predicted output as input
+            x[i+1] = torch.cat(angle2sincos(output), 1)
     return y_pred
 
 def angle2ee(rec_angle):
@@ -172,6 +187,9 @@ def train(data, step=0, n_epochs=10000):
 
                 opt.zero_grad()
                 rec_angle = np.pi*(torch.tanh(forward_pass(x))+1)
+                #rec_sincos = torch.tanh(forward_pass(x))
+                 
+                #rec_angle = sincos2angle(rec_sincos[:,:,:7], rec_sincos[:,:,7:])
                 ee_pred = angle2ee(rec_angle)
                 loss = criterion(ee_pred, ee_target)
                 if phase == 'train':
@@ -217,12 +235,15 @@ def eval_model(data, phases=['train', 'valid'], n=20, shuffle=False, teacher_for
             x = torch.FloatTensor(data[phase]['input'][:,indexes[st:en]]).to(device)
             ee_target = torch.FloatTensor(data[phase]['ee_target'][:,indexes[st:en]]).to(device)
 
-            rec_angle = np.pi*(torch.tanh(forward_pass(x))+1)
+            rec_angle = np.pi*(torch.tanh(forward_pass(x, use_output=not args.teacher_force, lead_in=args.lead_in)+1))
             ee_pred = angle2ee(rec_angle).detach().cpu().numpy()
             plt.figure()
             for ii in range(ee_pred.shape[1]):
                 plt.scatter(ee_pred[:,ii,0], ee_pred[:,ii,1])
-            fname = modelbase+'%s_%05d-%05d.png'%(phase,st,en)
+            if args.teacher_force:
+                fname = modelbase+'%s_%05d-%05d_tf.png'%(phase,st,en)
+            else:
+                fname = modelbase+'%s_%05d-%05d_li%02d.png'%(phase,st,en, args.lead_in)
             print('plotting', fname)
             plt.savefig(fname)
             plt.close()
@@ -230,15 +251,24 @@ def eval_model(data, phases=['train', 'valid'], n=20, shuffle=False, teacher_for
             en = min([st+batch_size, n+1])
             bs = en-st
 
-# tan(theta) = sin(theta)/cos(theta) 
+def sincos2angle(sin_theta, cos_theta):
+    """ robosuite outputs the joint angle in sin(theta) cos(angle) 
+    This function converts it to angles in radians """
+    return torch.arctan(sin_theta/cos_theta)
+
+def angle2sincos(theta):
+    """ convert an angle to sin(angle) cos(theta)  in radians """
+    return torch.sin(theta), torch.cos(theta) 
  
 if __name__ == '__main__':
     import argparse
     from glob import glob
     parser = argparse.ArgumentParser()
-    parser.add_argument('--exp_name', default='v2_lstm_ee')
+    parser.add_argument('--exp_name', default='v3_lstm_ee')
     parser.add_argument('--eval', default=False, action='store_true')
+    parser.add_argument('-tf', '--teacher_force', default=False, action='store_true')
     parser.add_argument('--load_model', default='')
+    parser.add_argument('--lead_in', default=10)
     args = parser.parse_args()
     
     load_from = 'results/21-01-21_v1_lstm_ee_03/'
@@ -252,8 +282,7 @@ if __name__ == '__main__':
     input_size = 14
     output_size = 7
     batch_size = 32
-    save_every_epochs = 10
-    y_pred = torch.zeros((batch_size, output_size))
+    save_every_epochs = 20
 
     tdh = get_torch_attributes(DH_attributes_jaco27DOF, device)
 
@@ -265,10 +294,15 @@ if __name__ == '__main__':
     random_state = np.random.RandomState(seed)
 
     data = {'valid':{}, 'train':{}} 
-    data['train']['input'], data['train']['target'], data['train']['ee_target'], data['valid']['input'], data['valid']['target'], data['valid']['ee_target'] = load_data('square.npy')
+#    data['train']['input'], data['train']['target'], data['train']['ee_target'], data['train']['jt_target'], data['valid']['input'], data['valid']['target'], data['valid']['ee_target'], data['valid']['jt_target'] = load_data('square.npy')
+#    
+#    data = {'valid':{}, 'train':{}} 
+    data['train']['input'], data['train']['target'], data['train']['ee_target'],  data['valid']['input'], data['valid']['target'], data['valid']['ee_target'] = load_data('square.npy')
     
 
-    lstm = LSTM(input_size=input_size, hidden_size=hidden_size).to(device)
+    lstm = LSTM(input_size=input_size, output_size=output_size, hidden_size=hidden_size).to(device)
+
+    lstm = LSTM(input_size=input_size, output_size=output_size, hidden_size=hidden_size).to(device)
     if not args.eval and args.load_model == '':
         savebase = create_results_dir(exp_name, results_dir=results_dir)
         step = 0
@@ -287,10 +321,10 @@ if __name__ == '__main__':
 
     if args.eval:
         eval_model(data, phases=['train', 'valid'], n=20, shuffle=False)
+        plot_losses(loadpath.replace('.pt', '_losses.npz'))
     else:
         criterion = nn.MSELoss()
         # use LBFGS as optimizer since we can load the whole data to train
         opt = optim.Adam(lstm.parameters(), lr=0.001)
         train(data, step,  n_epochs=10000)
      
-embed()

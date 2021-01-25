@@ -13,6 +13,7 @@ import time
 import os, sys
 import numpy as np
 import shutil
+from util import plot_losses
 from IPython import embed 
 
 def load_data(data_file):
