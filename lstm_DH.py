@@ -16,87 +16,9 @@ import os, sys
 import numpy as np
 import shutil
 from utils import find_latest_checkpoint, create_results_dir, plot_losses
+from utils import robotDH, angle2sincos, sincos2angle
+from utils import load_robosuite_data, get_data_norm_params
 from IPython import embed 
-
-# Params for Denavit-Hartenberg Reference Frame Layout (DH)
-jaco27DOF_DH_lengths = {'D1':0.2755, 'D2':0.2050, 
-               'D3':0.2050, 'D4':0.2073,
-               'D5':0.1038, 'D6':0.1038, 
-               'D7':0.1600, 'e2':0.0098}
- 
-DH_attributes_jaco27DOF = {
-          'DH_a':[0, 0, 0, 0, 0, 0, 0],
-           'DH_alpha':[np.pi/2.0, np.pi/2.0, np.pi/2.0, np.pi/2.0, np.pi/2.0, np.pi/2.0, np.pi],
-           'DH_theta_sign':[1, 1, 1, 1, 1, 1, 1],
-           'DH_theta_offset':[np.pi,0.0, 0.0, 0.0, 0.0,0.0,np.pi/2.0],
-           'DH_d':(-jaco27DOF_DH_lengths['D1'], 
-                    0, 
-                    -(jaco27DOF_DH_lengths['D2']+jaco27DOF_DH_lengths['D3']), 
-                    -jaco27DOF_DH_lengths['e2'], 
-                    -(jaco27DOF_DH_lengths['D4']+jaco27DOF_DH_lengths['D5']), 
-                    0, 
-                    -(jaco27DOF_DH_lengths['D6']+jaco27DOF_DH_lengths['D7']))
-           }
-
-
-def get_torch_attributes(np_attribute_dict, device='cpu'):
-    pt_attribute_dict = {}
-    for key, item in np_attribute_dict.items():
-        pt_attribute_dict[key] = torch.FloatTensor(item).to(device)
-    return pt_attribute_dict
-
-
-def load_data(data_file):
-    # each episode is 500 steps long
-    sq = np.load(data_file, allow_pickle=True)
-    sq_fmt = []
-    for episode in sq:
-        #ep_fmt = [np.hstack((x['robot0_joint_pos_sin'], x['robot0_joint_pos_cos'], x['robot0_eef_pos'], x['robot0_joint_pos'])) for x in episode]
-        #ep_fmt = [np.hstack((x['robot0_joint_pos_sin'], x['robot0_joint_pos_cos'], x['robot0_eef_pos'])) for x in episode]
-        ep_fmt = [np.hstack((x['robot0_joint_pos_sin'], x['robot0_joint_pos_cos'], x['robot0_eef_pos'])) for x in episode]
-        sq_fmt.append(ep_fmt)
-    # t, batch, features
-    sq_fmt = np.array(sq_fmt).swapaxes(0,1)
-    n_traces = sq_fmt.shape[1]
-
-    # EE is at end of values
-    indexes = np.arange(n_traces, dtype=np.int)
-    random_state.shuffle(indexes)
-    ttb = max([1,int(n_traces*.15)])
-    t_inds = indexes[ttb:]
-    v_inds = indexes[:ttb]
-    train_input = sq_fmt[:-1,   t_inds, :input_size]
-    train_target = sq_fmt[1:,   t_inds, :input_size]
-    train_ee_target = sq_fmt[1:,t_inds, input_size:input_size+3]
-#    train_jt_target = sq_fmt[1:,t_inds, input_size+3:]
-
-    valid_input = sq_fmt[:-1,    v_inds, :input_size]
-    valid_target = sq_fmt[1:,    v_inds, :input_size]
-    valid_ee_target = sq_fmt[1:, v_inds, input_size:input_size+3]
-#    valid_jt_target = sq_fmt[1:, v_inds, input_size+3:]
-#   return train_input, train_target, train_ee_target, train_jt_target, valid_input, valid_target, valid_ee_target, valid_jt_target
-    return train_input, train_target, train_ee_target, valid_input, valid_target, valid_ee_target
-
-def torch_dh_transform(dh_index,angles):
-    theta = tdh['DH_theta_sign'][dh_index]*angles+tdh['DH_theta_offset'][dh_index]
-    d = tdh['DH_d'][dh_index]
-    a = tdh['DH_a'][dh_index]
-    alpha = tdh['DH_alpha'][dh_index]
-    bs = angles.shape[0]
-    T = torch.zeros((bs,4,4), device=device)
-    T[:,0,0] = T[:,0,0] +  torch.cos(theta)
-    T[:,0,1] = T[:,0,1] + -torch.sin(theta)*torch.cos(alpha)
-    T[:,0,2] = T[:,0,2] +  torch.sin(theta)*torch.sin(alpha)
-    T[:,0,3] = T[:,0,3] +  a*torch.cos(theta)
-    T[:,1,0] = T[:,1,0] +  torch.sin(theta)
-    T[:,1,1] = T[:,1,1] +   torch.cos(theta)*torch.cos(alpha)
-    T[:,1,2] = T[:,1,2] +   -torch.cos(theta)*torch.sin(alpha)
-    T[:,1,3] = T[:,1,3] +  a*torch.sin(theta)
-    T[:,2,1] = T[:,2,1] +  torch.sin(alpha)
-    T[:,2,2] = T[:,2,2] +   torch.cos(alpha)
-    T[:,2,3] = T[:,2,3] +  d
-    T[:,3,3] = T[:,3,3] +  1.0
-    return T 
 
 class LSTM(nn.Module):
     def __init__(self, input_size=14, output_size=7, hidden_size=1024):
@@ -115,13 +37,15 @@ class LSTM(nn.Module):
         return output, h1_t, c1_t, h2_t, c2_t
 
 def forward_pass(input_data, use_output=False, lead_in=3):
+    input_data = (input_data-train_mean)/train_std
     if use_output:
         x = torch.zeros_like(input_data)
         x[:lead_in] = input_data[:lead_in]
     else:
         # teacher force
-        x = input_data
-    
+        # add gaussian noise independent per feature and sampled 
+        # from a 0 mean gaussian where std deviation is that of the data (normed to 1)
+        x = input_data + torch.normal(torch.zeros_like(input_data), noise_std*torch.ones_like(input_data))
     bs = x.shape[1]
     ts = x.shape[0]
     h1_tm1 = torch.zeros((bs, hidden_size)).to(device)
@@ -137,39 +61,6 @@ def forward_pass(input_data, use_output=False, lead_in=3):
             x[i+1] = torch.cat(angle2sincos(output), 1)
     return y_pred
 
-def angle2ee(rec_angle):
-    # ts, bs, feat
-    ts, bs, fs = rec_angle.shape
-    ee_pred = torch.zeros((ts,bs,3)).to(device)
-    Tinit = torch.FloatTensor(([[1,0,0,0],[0,-1,0,0],[0,0,-1,0],[0,0,0,1]])).to(device)
-    # TODO join the time/batch so i don't have to loop this
-    for b in range(bs):
-        _T0 = torch_dh_transform(0, rec_angle[:,b,0])
-        # TODO is Tall really needed - it is just a constant
-        
-        T0_pred = torch.matmul(Tinit,_T0)
- 
-        _T1 = torch_dh_transform(1, rec_angle[:,b,1])
-        T1_pred = torch.matmul(T0_pred,_T1)
- 
-        _T2 = torch_dh_transform(2, rec_angle[:,b,2])
-        T2_pred = torch.matmul(T1_pred,_T2)
-
-        _T3 = torch_dh_transform(3, rec_angle[:,b,3])
-        T3_pred = torch.matmul(T2_pred,_T3)
-
-        _T4 = torch_dh_transform(4, rec_angle[:,b,4])
-        T4_pred = torch.matmul(T3_pred,_T4)
-
-        _T5 = torch_dh_transform(5, rec_angle[:,b,5])
-        T5_pred = torch.matmul(T4_pred,_T5)
-
-        _T6 = torch_dh_transform(6, rec_angle[:,b,6])
-        T6_pred = torch.matmul(T5_pred,_T6)
-        # TODO - get full quat
-        ee_pred[:,b] = ee_pred[:,b] + T6_pred[:,:3,3]
-    return ee_pred
- 
 def train(data, step=0, n_epochs=10000):
     for epoch in range(n_epochs):
         for phase in ['valid', 'train']:
@@ -183,16 +74,22 @@ def train(data, step=0, n_epochs=10000):
             bs = en-st
             while en <= n_samples and bs > 0:
                 x = torch.FloatTensor(data[phase]['input'][:,indexes[st:en]]).to(device)
-                ee_target = torch.FloatTensor(data[phase]['ee_target'][:,indexes[st:en]]).to(device)
 
                 opt.zero_grad()
                 rec_angle = np.pi*(torch.tanh(forward_pass(x))+1)
                 #rec_sincos = torch.tanh(forward_pass(x))
                  
                 #rec_angle = sincos2angle(rec_sincos[:,:,:7], rec_sincos[:,:,7:])
-                ee_pred = angle2ee(rec_angle)
-                loss = criterion(ee_pred, ee_target)
+                if args.loss == 'DH':
+                    ee_target = torch.FloatTensor(data[phase]['ee_target'][:,indexes[st:en]]).to(device)
+                    ee_pred = robot_dh.angle2ee(rec_angle)
+                    loss = criterion(ee_pred, ee_target)
+                elif args.loss == 'angle':
+                    jt_target = torch.FloatTensor(data[phase]['jt_target'][:,indexes[st:en]]).to(device)
+                    loss = criterion(rec_angle, jt_target)
+
                 if phase == 'train':
+                    clip_grad_norm(lstm.parameters(), grad_clip)
                     loss.backward()
                     step+=bs
                     opt.step()
@@ -235,8 +132,8 @@ def eval_model(data, phases=['train', 'valid'], n=20, shuffle=False, teacher_for
             x = torch.FloatTensor(data[phase]['input'][:,indexes[st:en]]).to(device)
             ee_target = torch.FloatTensor(data[phase]['ee_target'][:,indexes[st:en]]).to(device)
 
-            rec_angle = np.pi*(torch.tanh(forward_pass(x, use_output=not args.teacher_force, lead_in=args.lead_in)+1))
-            ee_pred = angle2ee(rec_angle).detach().cpu().numpy()
+            rec_angle = np.pi*(torch.tanh(forward_pass(x, use_output=not args.teacher_force, lead_in=args.lead_in))+1)
+            ee_pred = robot_dh.angle2ee(rec_angle).detach().cpu().numpy()
             plt.figure()
             for ii in range(ee_pred.shape[1]):
                 plt.scatter(ee_pred[:,ii,0], ee_pred[:,ii,1])
@@ -250,59 +147,44 @@ def eval_model(data, phases=['train', 'valid'], n=20, shuffle=False, teacher_for
             st = en
             en = min([st+batch_size, n+1])
             bs = en-st
-
-def sincos2angle(sin_theta, cos_theta):
-    """ robosuite outputs the joint angle in sin(theta) cos(angle) 
-    This function converts it to angles in radians """
-    return torch.arctan(sin_theta/cos_theta)
-
-def angle2sincos(theta):
-    """ convert an angle to sin(angle) cos(theta)  in radians """
-    return torch.sin(theta), torch.cos(theta) 
- 
 if __name__ == '__main__':
     import argparse
     from glob import glob
     parser = argparse.ArgumentParser()
-    parser.add_argument('--exp_name', default='v3_lstm_ee')
     parser.add_argument('--eval', default=False, action='store_true')
     parser.add_argument('-tf', '--teacher_force', default=False, action='store_true')
     parser.add_argument('--load_model', default='')
-    parser.add_argument('--lead_in', default=10)
+    parser.add_argument('--loss', default='DH')
+    parser.add_argument('--device', default='cuda')
+    parser.add_argument('-li', '--lead_in', default=100, type=int)
     args = parser.parse_args()
+    exp_name = 'v4_lstm_%s'%(args.loss)
     
-    load_from = 'results/21-01-21_v1_lstm_ee_03/'
-    device = 'cuda'
+    device = args.device
     results_dir = 'results'
     # set random seed to 0
-    exp_name = args.exp_name
     seed = 323
+    noise_std = 4
     grad_clip = 5
     hidden_size = 1024
     input_size = 14
     output_size = 7
     batch_size = 32
-    save_every_epochs = 20
+    save_every_epochs = 100
 
-    tdh = get_torch_attributes(DH_attributes_jaco27DOF, device)
-
-      
-    losses = {'train':[], 'valid':[]}
-
+    robot_dh = robotDH(robot_name='jaco27DOF', device=device)
     np.random.seed(seed)
     torch.manual_seed(seed)
     random_state = np.random.RandomState(seed)
+    losses = {'train':[], 'valid':[]}
 
-    data = {'valid':{}, 'train':{}} 
-#    data['train']['input'], data['train']['target'], data['train']['ee_target'], data['train']['jt_target'], data['valid']['input'], data['valid']['target'], data['valid']['ee_target'], data['valid']['jt_target'] = load_data('square.npy')
-#    
-#    data = {'valid':{}, 'train':{}} 
-    data['train']['input'], data['train']['target'], data['train']['ee_target'],  data['valid']['input'], data['valid']['target'], data['valid']['ee_target'] = load_data('square.npy')
-    
 
-    lstm = LSTM(input_size=input_size, output_size=output_size, hidden_size=hidden_size).to(device)
+    data = load_robosuite_data('square.npy', random_state=random_state)
+    # 0 mean and divide by std dev data 
+    train_mean, train_std = get_data_norm_params(data, device=device)
 
     lstm = LSTM(input_size=input_size, output_size=output_size, hidden_size=hidden_size).to(device)
+
     if not args.eval and args.load_model == '':
         savebase = create_results_dir(exp_name, results_dir=results_dir)
         step = 0
@@ -315,7 +197,7 @@ if __name__ == '__main__':
             savebase = os.path.split(args.load_model)[0]
             
         modelbase = loadpath.replace('.pt', '_')
-        load_dict = torch.load(loadpath)
+        load_dict = torch.load(loadpath, map_location=device)
         step = load_dict['train_cnt']
         lstm.load_state_dict(load_dict['model'])
 
@@ -325,6 +207,6 @@ if __name__ == '__main__':
     else:
         criterion = nn.MSELoss()
         # use LBFGS as optimizer since we can load the whole data to train
-        opt = optim.Adam(lstm.parameters(), lr=0.001)
+        opt = optim.Adam(lstm.parameters(), lr=0.0001)
         train(data, step,  n_epochs=10000)
      
