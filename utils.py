@@ -30,13 +30,16 @@ DH_attributes_jaco27DOF = {
                     0, 
                     -(jaco27DOF_DH_lengths['D6']+jaco27DOF_DH_lengths['D7']))
            }
-dm_reacher = {
-     'DH_a':[.5,.5],
-     'DH_alpha':[0,0],
-     'DH_theta_sign':[1,1], 
+DH_attributes_dm_reacher = {
+     'DH_a':[0.01,0.01],
+     'DH_alpha':[0.0,0.0],
+     'DH_theta_sign':[1.0,1.0], 
      'DH_theta_offset':[0,0],
      'DH_d':[0,0]}
        
+robot_attributes = {'dm_reacher':DH_attributes_dm_reacher, 
+                    'jaco27DOF':DH_attributes_jaco27DOF, 
+                   }
 
 def torch_dh_transform(theta, d, a, alpha, device):
     # TODO check this - it had a bug
@@ -58,14 +61,10 @@ def torch_dh_transform(theta, d, a, alpha, device):
 
 
 class robotDH():
-    def __init__(self, robot_name='jaco27DOF', device='cpu'):
- 
-        self.robot_name = robot_name
+    def __init__(self, robot_attribute_dict, device='cpu'):
         self.device = device
-        if robot_name == 'jaco27DOF':
-            np_attribute_dict=DH_attributes_jaco27DOF
         self.tdh = {}
-        for key, item in np_attribute_dict.items():
+        for key, item in robot_attribute_dict.items():
             self.tdh[key] = torch.FloatTensor(item).to(self.device)
 
     def angle2ee(self, rec_angle):

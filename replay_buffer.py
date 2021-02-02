@@ -70,10 +70,12 @@ class ReplayBuffer(object):
         # track episode rollovers
         self.episodic_reward += reward
         if done:
-            self.episode_start_steps.append(self.size)
-            self.episode_start_times.append(time.time())
+            s_time = time.time()
+            self.episode_start_steps.append(self.size+1)
+            self.episode_start_times.append(s_time)
+
             self.episode_rewards.append(self.episodic_reward)
-            e_time = self.episode_start_times[-1]-self.episode_start_times[-2]
+            e_time = s_time-self.episode_start_times[-2]
             e_steps = self.episode_start_steps[-1]-self.episode_start_steps[-2]
             print('EPISODE {} END: Ep R: {} Ep Time: {} Ep Steps:{} Total Steps: {}'.format(self.episode_count, 
                                                                                             self.episodic_reward, 

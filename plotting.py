@@ -240,77 +240,66 @@ def plot_states(last_steps, load_model_base, detail_dict):
         plt.ylabel(key)
         plt.close()
 
-def plot_position_actions(last_steps, load_model_base, relative=True):
-    # only works for jaco
+def plot_actions(last_steps, load_model_base):
     st, actions, re, nst, nd, fr, nfr = last_steps
-    joint_states = st[:,3:3+13]
-    joint_next_states = nst[:,3:3+13]
+    plt.figure()
+    plt.title('actions')
     for an in range(actions.shape[1]):
-        plt.figure()
         aname = 'action_%02d'%an
-        plt.title(aname)
-        if relative:
-            plt.plot(actions[:,an], label='cmd rel', lw=3)
-            cmd_action = actions[:,an]+joint_states[:,an]
-        else:
-            cmd_action = actions[:,an]
-        plt.plot(cmd_action, label='cmd', lw=2.5)
-        plt.plot(joint_next_states[:,an], label='next state', lw=2)
-        error = joint_next_states[:,an] - cmd_action
-        plt.plot(error, label='pos error', lw=1.5)
-        plt.legend()
-        plt.savefig(load_model_base+'_action_%02d.png'%(an))
-        plt.xlabel('steps')
-        plt.close()
+        plt.plot(actions[:,an], label=aname, lw=3)
+    plt.legend()
+    plt.xlabel('steps')
+    plt.savefig(load_model_base+'_actions.png')
+    plt.close()
 
 def plot_replay_reward(replay_buffer, load_model_base, start_step=0, name_modifier=''):
     st = np.array(replay_buffer.episode_start_times)
     plt.figure()
     plt.title("Episode Time")
     plt.plot(st[1:]-st[:-1])
-    plt.savefig(load_model_base+'_seconds_episode_%s.png'%name_modifier)
     plt.xlabel('episode')
     plt.ylabel('seconds')
+    plt.savefig(load_model_base+'_seconds_episode_%s.png'%name_modifier)
     plt.close()
 
     plt.figure()
     plt.title("filtered reward")
     plt.plot(rolling_average(replay_buffer.episode_rewards, 10))
-    plt.savefig(load_model_base+'_rewards_episode_filt_%s.png'%name_modifier)
     plt.xlabel('episode')
     plt.ylabel('reward')
+    plt.savefig(load_model_base+'_rewards_episode_filt_%s.png'%name_modifier)
     plt.close()
 
     plt.figure()
     plt.title("reward")
     plt.plot(replay_buffer.episode_rewards)
-    plt.savefig(load_model_base+'_rewards_episode_%s.png'%name_modifier)
     plt.xlabel('episode')
     plt.ylabel('reward')
+    plt.savefig(load_model_base+'_rewards_episode_%s.png'%name_modifier)
     plt.close()
 
     plt.figure()
     plt.title("cumulative reward")
     plt.plot(np.cumsum(replay_buffer.episode_rewards))
-    plt.savefig(load_model_base+'_cumulative_episode_%s.png'%name_modifier)
     plt.xlabel('episode')
     plt.ylabel('total reward')
+    plt.savefig(load_model_base+'_cumulative_episode_%s.png'%name_modifier)
     plt.close()
 
     plt.figure()
     plt.title("reward")
     plt.plot(np.array(replay_buffer.episode_start_steps[1:])+start_step, replay_buffer.episode_rewards)
-    plt.savefig(load_model_base+'_rewards_step_%s.png'%name_modifier)
     plt.xlabel('steps')
     plt.ylabel('reward')
+    plt.savefig(load_model_base+'_rewards_step_%s.png'%name_modifier)
     plt.close()
 
     plt.figure()
     plt.title("cumulative reward")
     plt.plot(np.array(replay_buffer.episode_start_steps[1:])+start_step, np.cumsum(replay_buffer.episode_rewards))
-    plt.savefig(load_model_base+'_cumulative_step_%s.png'%name_modifier)
     plt.xlabel('steps')
     plt.ylabel('total reward')
+    plt.savefig(load_model_base+'_cumulative_step_%s.png'%name_modifier)
     plt.close()
  
 
