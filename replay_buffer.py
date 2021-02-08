@@ -69,9 +69,12 @@ class ReplayBuffer(object):
 
         # track episode rollovers
         self.episodic_reward += reward
+
+        self.ptr = (self.ptr + 1) % self.max_size
+        self.size+=1
         if done:
             s_time = time.time()
-            self.episode_start_steps.append(self.size+1)
+            self.episode_start_steps.append(self.size)
             self.episode_start_times.append(s_time)
 
             self.episode_rewards.append(self.episodic_reward)
@@ -83,8 +86,6 @@ class ReplayBuffer(object):
             self.episode_count += 1
             self.episodic_reward = 0
 
-        self.ptr = (self.ptr + 1) % self.max_size
-        self.size+=1
    
     def get_last_steps(self, num_steps_back):
         assert num_steps_back>0
@@ -106,11 +107,13 @@ class ReplayBuffer(object):
             return self.states[batch_indexes], self.actions[batch_indexes], self.rewards[batch_indexes], self.next_states[batch_indexes], self.not_dones[batch_indexes], self.fake_frames, self.fake_frames
 
     def sample(self, batch_size, return_indexes=False):
-        indexes = self.random_state.randint(0,self.num_steps_available(),batch_size)
+        use_indexes = self.random_state.randint(0,self.num_steps_available(),batch_size)
         if return_indexes:
-            return self.get_indexes(indexes), indexes
+            return self.get_indexes(use_indexes), indexes
         else:
-            return self.get_indexes(indexes)
+            return self.get_indexes(use_indexes)
+
+
 
 if __name__ == '__main__':
     def test_fake_replay():

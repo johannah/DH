@@ -61,47 +61,28 @@ def torch_dh_transform(theta, d, a, alpha, device):
 
 
 class robotDH():
-    def __init__(self, robot_attribute_dict, device='cpu'):
+    def __init__(self, robot_name, device='cpu'):
         self.device = device
+        self.robot_name = robot_name
+        self.robot_attribute_dict = robot_attributes[self.robot_name]
         self.tdh = {}
-        for key, item in robot_attribute_dict.items():
+        for key, item in self.robot_attribute_dict.items():
             self.tdh[key] = torch.FloatTensor(item).to(self.device)
 
-    def angle2ee(self, rec_angle):
+    def angle2ee(self, angles):
         """ 
-            convert joint angle to end effector
+            convert joint angle to end effector for reacher for ts,bs,f
         """
         # ts, bs, feat
-        ts, bs, fs = rec_angle.shape
-        ee_pred = torch.zeros((ts,bs,3)).to(self.device)
-        Tinit = torch.FloatTensor(([[1,0,0,0],[0,-1,0,0],[0,0,-1,0],[0,0,0,1]])).to(self.device)
+        ts, bs, fs = angles.shape
+        ee_pred = torch.zeros((ts,bs,2)).to(self.device)
         # TODO join the time/batch so i don't have to loop this
         # TODO this transform is pretty dependent on the 7 features in jaco
         for b in range(bs):
-            _T0 = self.dh_transform(0, rec_angle[:,b,0])
-            # TODO is Tall really needed - it is just a constant
-            
-            T0_pred = torch.matmul(Tinit,_T0)
-     
-            _T1 = self.dh_transform(1, rec_angle[:,b,1])
-            T1_pred = torch.matmul(T0_pred,_T1)
-     
-            _T2 = self.dh_transform(2, rec_angle[:,b,2])
-            T2_pred = torch.matmul(T1_pred,_T2)
-    
-            _T3 = self.dh_transform(3, rec_angle[:,b,3])
-            T3_pred = torch.matmul(T2_pred,_T3)
-    
-            _T4 = self.dh_transform(4, rec_angle[:,b,4])
-            T4_pred = torch.matmul(T3_pred,_T4)
-    
-            _T5 = self.dh_transform(5, rec_angle[:,b,5])
-            T5_pred = torch.matmul(T4_pred,_T5)
-    
-            _T6 = self.dh_transform(6, rec_angle[:,b,6])
-            T6_pred = torch.matmul(T5_pred,_T6)
-            # TODO - get full quat
-            ee_pred[:,b] = ee_pred[:,b] + T6_pred[:,:3,3]
+            T0 = self.dh_transform(0, angles[:,b,0])
+            T1 = self.dh_transform(1, angles[:,b,1])
+            T = torch.matmul(T0, T1)
+            ee_pred[:,b] = ee_pred[:,b] + T[:,:2,3]
         return ee_pred
 
     def dh_transform(self, dh_index, angles):
@@ -112,21 +93,68 @@ class robotDH():
         return torch_dh_transform(theta, d, a, alpha, self.device)     
 
 
-def sincos2angle(sin_theta, cos_theta):
+
+#    def angle2ee(self, rec_angle):
+#        """ 
+#            convert joint angle to end effector for jaco 
+#              TODO make this general
+#        """
+#        # ts, bs, feat
+#        ts, bs, fs = rec_angle.shape
+#        ee_pred = torch.zeros((ts,bs,3)).to(self.device)
+#        Tinit = torch.FloatTensor(([[1,0,0,0],[0,-1,0,0],[0,0,-1,0],[0,0,0,1]])).to(self.device)
+#        # TODO join the time/batch so i don't have to loop this
+#        # TODO this transform is pretty dependent on the 7 features in jaco
+#        for b in range(bs):
+#          
+#            _T0 = self.dh_transform(0, rec_angle[:,b,0])
+#            # TODO is Tall really needed - it is just a constant
+#            
+#            T0_pred = torch.matmul(Tinit,_T0)
+#     
+#            _T1 = self.dh_transform(1, rec_angle[:,b,1])
+#            T1_pred = torch.matmul(T0_pred,_T1)
+#     
+#            _T2 = self.dh_transform(2, rec_angle[:,b,2])
+#            T2_pred = torch.matmul(T1_pred,_T2)
+#    
+#            _T3 = self.dh_transform(3, rec_angle[:,b,3])
+#            T3_pred = torch.matmul(T2_pred,_T3)
+#    
+#            _T4 = self.dh_transform(4, rec_angle[:,b,4])
+#            T4_pred = torch.matmul(T3_pred,_T4)
+#    
+#            _T5 = self.dh_transform(5, rec_angle[:,b,5])
+#            T5_pred = torch.matmul(T4_pred,_T5)
+#    
+#            _T6 = self.dh_transform(6, rec_angle[:,b,6])
+#            T6_pred = torch.matmul(T5_pred,_T6)
+#            # TODO - get full quat
+#            ee_pred[:,b] = ee_pred[:,b] + T6_pred[:,:3,3]
+#        return ee_pred
+
+
+def sincos2angle(sin_theta, cos_theta, use_numpy=False):
     """ robosuite outputs the joint angle in sin(theta) cos(angle) 
     This function converts it to angles in radians """
-    return torch.arctan(sin_theta/cos_theta)
+    if not use_numpy: 
+        return torch.arctan(sin_theta/cos_theta)
+    else:
+        return np.arctan(sin_theta/cos_theta)
 
-def angle2sincos(theta):
+def angle2sincos(theta, use_numpy=False):
     """ convert an angle to sin(angle) cos(theta)  in radians """
-    return torch.sin(theta), torch.cos(theta) 
+    if not use_numpy: 
+        return torch.sin(theta), torch.cos(theta) 
+    else:
+        return np.sin(theta), np.cos(theta) 
  
 
 
 def get_data_norm_params(data, device='cpu'):
-    input_size = len(data['train']['input'][0,0])
-    train_mean = torch.FloatTensor([data['train']['input'][:,:,x].mean() for x in range(input_size)]).to(device)
-    train_std = torch.FloatTensor([data['train']['input'][:,:,x].std() for x in range(input_size)]).to(device)    
+    input_size = data.shape[1]
+    train_mean = torch.FloatTensor([data[:,x].mean() for x in range(input_size)]).to(device)
+    train_std = torch.FloatTensor([data[:,x].std() for x in range(input_size)]).to(device)    
     return train_mean, train_std
 
 def load_robosuite_data(data_file, random_state):
