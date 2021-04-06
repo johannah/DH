@@ -12,7 +12,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from skimage.util.shape import view_as_windows
 from torch import distributions as pyd
-from IPython import embed; 
+from IPython import embed;
 
 class eval_mode(object):
     def __init__(self, *models):
@@ -95,6 +95,69 @@ def to_np(t):
         return t.cpu().detach().numpy()
 
 
+class BodyWrapperStack(gym.Wrapper):
+    def __init__(self, env, k):
+        gym.Wrapper.__init__(self, env)
+        self.qpos_shape = q_shp = self.env.physics.data.qpos.shape
+        self.xpos_shape = x_shp = self.env.physics.data.xpos.shape
+        # get joint positions
+        is_limited = self.env.physics.model.jnt_limited.astype(np.bool)
+        joint_range = self.env.physics.model.jnt_range
+        lower_limits = np.where(is_limited, joint_range[:, 0], -np.pi)
+        upper_limits = np.where(is_limited, joint_range[:, 1], np.pi)
+        qe = self.env.physics.data.qpos
+        xe = self.env.physics.data.qpos
+        # dont use lower upper limits right now
+        self.q_space = gym.spaces.Box(
+            low=-10*np.pi,
+            high=10*np.pi,
+            shape=(1*k,q_shp[0]),
+            dtype=qe.dtype)
+        self.x_space = gym.spaces.Box(
+            low=-1000,
+            high=1000,
+            shape=(x_shp[0]*k,x_shp[1]),
+            dtype=xe.dtype)
+        self._k = k
+        self._xs = deque([], maxlen=k)
+        self._qs = deque([], maxlen=k)
+        self._frames = deque([], maxlen=k)
+        shp = env.observation_space.shape
+        self.observation_space = gym.spaces.Box(
+            low=0,
+            high=1,
+            shape=((shp[0] * k,) + shp[1:]),
+            dtype=env.observation_space.dtype)
+        self._max_episode_steps = env._max_episode_steps
+
+    def reset(self):
+        obs = self.env.reset()
+        qpos = self.env.physics.data.qpos[None]
+        xpos = self.env.physics.data.xpos
+        for _ in range(self._k):
+            self._frames.append(obs)
+            self._qs.append(qpos)
+            self._xs.append(xpos)
+        return self._get_obs()
+
+    def step(self, action):
+        obs, reward, done, info = self.env.step(action)
+        qpos = self.env.physics.data.qpos[None]
+        xpos = self.env.physics.data.xpos
+        self._frames.append(obs)
+        self._qs.append(qpos)
+        self._xs.append(xpos)
+        return self._get_obs(), reward, done, info
+
+    def _get_obs(self):
+        assert len(self._frames) == self._k
+        assert len(self._qs) == self._k
+        assert len(self._xs) == self._k
+        obs = (np.concatenate(list(self._frames), axis=0),
+              np.concatenate(list(self._qs), axis=0),
+              np.concatenate(list(self._xs), axis=0))
+        return obs
+
 class FrameStack(gym.Wrapper):
     def __init__(self, env, k):
         gym.Wrapper.__init__(self, env)
@@ -110,7 +173,7 @@ class FrameStack(gym.Wrapper):
 
     def reset(self):
         obs = self.env.reset()
-        embed() 
+        embed()
         for _ in range(self._k):
             self._frames.append(obs)
         return self._get_obs()

@@ -16,7 +16,7 @@ import utils
 from logger import Logger
 from replay_buffer import ReplayBuffer
 from video import VideoRecorder
-
+from IPython import embed
 torch.backends.cudnn.benchmark = True
 
 
@@ -45,7 +45,7 @@ def make_env(cfg):
                        frame_skip=cfg.action_repeat,
                        camera_id=camera_id)
 
-    env = utils.FrameStack(env, k=cfg.frame_stack)
+    env = utils.BodyWrapperStack(env, k=cfg.frame_stack)
 
     env.seed(cfg.seed)
     assert env.action_space.low.min() >= -1
@@ -73,7 +73,8 @@ class Workspace(object):
 
         cfg.agent.params.obs_shape = self.env.observation_space.shape
         cfg.agent.params.action_shape = self.env.action_space.shape
-        cfg.agent.params.body_shape = self.env.body_space.shape
+        cfg.agent.params.qpos_shape = self.env.qpos_shape
+        cfg.agent.params.xpos_shape = self.env.xpos_shape
         cfg.agent.params.action_range = [
             float(self.env.action_space.low.min()),
             float(self.env.action_space.high.max())
@@ -81,7 +82,8 @@ class Workspace(object):
         self.agent = hydra.utils.instantiate(cfg.agent)
 
         self.replay_buffer = ReplayBuffer(self.env.observation_space.shape,
-                                          self.env.body_space.shape,
+                                          self.env.q_space.shape,
+                                          self.env.x_space.shape,
                                           self.env.action_space.shape,
                                           cfg.replay_buffer_capacity,
                                           self.cfg.image_pad, self.device)
@@ -93,15 +95,15 @@ class Workspace(object):
     def evaluate(self):
         average_episode_reward = 0
         for episode in range(self.cfg.num_eval_episodes):
-            obs, body = self.env.reset()
+            obs = self.env.reset()
             self.video_recorder.init(enabled=(episode == 0))
             done = False
             episode_reward = 0
             episode_step = 0
             while not done:
                 with utils.eval_mode(self.agent):
-                    action = self.agent.act(obs, sample=False)
-                obs, body, reward, done, info = self.env.step(action)
+                    action = self.agent.act(obs[0], sample=False)
+                obs, reward, done, info = self.env.step(action)
                 self.video_recorder.record(self.env)
                 episode_reward += reward
                 episode_step += 1
@@ -129,11 +131,12 @@ class Workspace(object):
                 if self.step % self.cfg.eval_frequency == 0:
                     self.logger.log('eval/episode', episode, self.step)
                     self.evaluate()
-
+                    if self.cfg.save_replay:
+                        pkl.dump(self.replay_buffer, open('replay_buffer_%06d.pkl'%self.step, 'wb'),  protocol=4)
                 self.logger.log('train/episode_reward', episode_reward,
                                 self.step)
 
-                obs, body = self.env.reset()
+                obs = self.env.reset()
                 done = False
                 episode_reward = 0
                 episode_step = 0
@@ -146,7 +149,7 @@ class Workspace(object):
                 action = self.env.action_space.sample()
             else:
                 with utils.eval_mode(self.agent):
-                    action = self.agent.act(obs, sample=True)
+                    action = self.agent.act(obs[0], sample=True)
 
             # run training update
             if self.step >= self.cfg.num_seed_steps:
@@ -154,18 +157,17 @@ class Workspace(object):
                     self.agent.update(self.replay_buffer, self.logger,
                                       self.step)
 
-            next_obs, next_body, reward, done, info = self.env.step(action)
+            next_obs, reward, done, info = self.env.step(action)
 
             # allow infinite bootstrap
             done = float(done)
             done_no_max = 0 if episode_step + 1 == self.env._max_episode_steps else done
             episode_reward += reward
 
-            self.replay_buffer.add(obs, body, action, reward, next_obs, next_body,  done,
+            self.replay_buffer.add(obs[0], obs[1], obs[2], action, reward, next_obs[0], next_obs[1], next_obs[2],  done,
                                    done_no_max)
 
             obs = next_obs
-            body = next_body
             episode_step += 1
             self.step += 1
 
