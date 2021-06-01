@@ -130,8 +130,8 @@ class Critic(nn.Module):
                             hidden_dim, 1, hidden_depth)
         self.Q2 = utils.mlp(self.encoder.feature_dim + action_shape[0],
                             hidden_dim, 1, hidden_depth)
-        self.body = utils.mlp(self.encoder.feature_dim + action_shape[0],
-                            hidden_dim, action_shape, hidden_depth)
+        #self.body = utils.mlp(self.encoder.feature_dim + action_shape[0],
+        #                    hidden_dim, action_shape, hidden_depth)
 
 
         self.outputs = dict()
@@ -144,13 +144,13 @@ class Critic(nn.Module):
         obs_action = torch.cat([obs, action], dim=-1)
         q1 = self.Q1(obs_action)
         q2 = self.Q2(obs_action)
-        next_body = self.body(obs_action)
+        #next_body = self.body(obs_action)
 
         self.outputs['q1'] = q1
         self.outputs['q2'] = q2
-        self.outputs['next_body'] = next_body
+        #self.outputs['next_body'] = next_body
 
-        return q1, q2, next_body
+        return q1, q2
 
     def log(self, logger, step):
         self.encoder.log(logger, step)
@@ -159,18 +159,17 @@ class Critic(nn.Module):
             logger.log_histogram(f'train_critic/{k}_hist', v, step)
 
         assert len(self.Q1) == len(self.Q2)
-        for i, (m1, m2, m3) in enumerate(zip(self.Q1, self.Q2, self.body):
+        for i, (m1, m2) in enumerate(zip(self.Q1, self.Q2)):
             assert type(m1) == type(m2)
             if type(m1) is nn.Linear:
                 logger.log_param(f'train_critic/q1_fc{i}', m1, step)
                 logger.log_param(f'train_critic/q2_fc{i}', m2, step)
-                logger.log_param(f'train_critic/body_fc{i}', body, step)
 
 
 
 class DRQAgent(object):
     """Data regularized Q: actor-critic method for learning from pixels."""
-    def __init__(self, obs_shape, action_shape, action_range, device,
+    def __init__(self, obs_shape, action_shape, body_shape, action_range, device,
                  encoder_cfg, critic_cfg, actor_cfg, discount,
                  init_temperature, lr, actor_update_frequency, critic_tau,
                  critic_target_update_frequency, batch_size):
@@ -202,7 +201,7 @@ class DRQAgent(object):
         self.critic_optimizer = torch.optim.Adam(self.critic.parameters(),
                                                  lr=lr)
         self.log_alpha_optimizer = torch.optim.Adam([self.log_alpha], lr=lr)
-        self.body_optimizer = torch.optim.Adam(self.critic.parameters(), lr=lr)
+        #self.body_optimizer = torch.optim.Adam(self.critic.parameters(), lr=lr)
 
         self.train()
         self.critic_target.train()
@@ -225,13 +224,13 @@ class DRQAgent(object):
         assert action.ndim == 2 and action.shape[0] == 1
         return utils.to_np(action[0])
 
-    def update_critic(self, obs, obs_aug, body, action, reward, next_obs,
-                      next_obs_aug, next_body, not_done, logger, step):
+    def update_critic(self, obs, obs_aug, action, reward, next_obs,
+                      next_obs_aug, not_done, logger, step):
         with torch.no_grad():
             dist = self.actor(next_obs)
             next_action = dist.rsample()
             log_prob = dist.log_prob(next_action).sum(-1, keepdim=True)
-            target_Q1, target_Q2, next_body = self.critic_target(next_obs, next_action)
+            target_Q1, target_Q2 = self.critic_target(next_obs, next_action)
             target_V = torch.min(target_Q1,
                                  target_Q2) - self.alpha.detach() * log_prob
             target_Q = reward + (not_done * self.discount * target_V)
@@ -249,15 +248,16 @@ class DRQAgent(object):
             target_Q = (target_Q + target_Q_aug) / 2
 
         # get current Q estimates
-        current_Q1, current_Q2, next_body_pred = self.critic(obs, action)
+        current_Q1, current_Q2 = self.critic(obs, action)
 
         critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(current_Q2, target_Q)
 
-        Q1_aug, Q2_aug, next_body_pred_aug = self.critic(obs_aug, action)
+        #Q1_aug, Q2_aug, next_body_pred_aug = self.critic(obs_aug, action)
+        Q1_aug, Q2_aug = self.critic(obs_aug, action)
 
         critic_loss += F.mse_loss(Q1_aug, target_Q) + F.mse_loss(Q2_aug, target_Q)
 
-        body_loss = F.mse_loss(next_body_pred, next_body) + F.mse_loss(next_body_pred_aug, next_body)
+        #body_loss = F.mse_loss(next_body_pred, next_body) + F.mse_loss(next_body_pred_aug, next_body)
 
         logger.log('train_critic/loss', critic_loss, step)
 
@@ -300,7 +300,7 @@ class DRQAgent(object):
         self.log_alpha_optimizer.step()
 
     def update(self, replay_buffer, logger, step):
-        obs, action, reward, next_obs, not_done, obs_aug, next_obs_aug = replay_buffer.sample(
+        obs, bodies, action, reward, next_obs, next_bodies, not_done, obs_aug, next_obs_aug = replay_buffer.sample(
             self.batch_size)
 
         logger.log('train/batch_reward', reward.mean(), step)

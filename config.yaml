@@ -36,6 +36,7 @@ agent:
   params:
     obs_shape: ??? # to be specified later
     action_shape: ??? # to be specified later
+    body_shape: ??? # to be specified later
     action_range: ??? # to be specified later
     device: ${device}
     encoder_cfg: ${encoder}

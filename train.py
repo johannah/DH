@@ -7,6 +7,7 @@ import time
 
 import numpy as np
 
+from IPython import embed
 import dmc2gym
 import hydra
 import torch
@@ -70,10 +71,10 @@ class Workspace(object):
         utils.set_seed_everywhere(cfg.seed)
         self.device = torch.device(cfg.device)
         self.env = make_env(cfg)
-
+        #self.env.physics.contexts.mujoco.free()
         cfg.agent.params.obs_shape = self.env.observation_space.shape
         cfg.agent.params.action_shape = self.env.action_space.shape
-        cfg.agent.params.body_shape = self.env.body_space.shape
+        cfg.agent.params.body_shape = self.env.body_space
         cfg.agent.params.action_range = [
             float(self.env.action_space.low.min()),
             float(self.env.action_space.high.max())
@@ -81,7 +82,7 @@ class Workspace(object):
         self.agent = hydra.utils.instantiate(cfg.agent)
 
         self.replay_buffer = ReplayBuffer(self.env.observation_space.shape,
-                                          self.env.body_space.shape,
+                                          self.env.body_space,
                                           self.env.action_space.shape,
                                           cfg.replay_buffer_capacity,
                                           self.cfg.image_pad, self.device)
