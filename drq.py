@@ -206,6 +206,14 @@ class DRQAgent(object):
         self.train()
         self.critic_target.train()
 
+    def save(self, filepath):
+        state_dict = {'log_alpha':self.log_alpha, 
+                      'target_entropy':self.target_entropy, 
+                      'actor':self.actor.state_dict(), 
+                      'critic':self.critic.state_dict(), 
+                      }
+        torch.save(state_dict, filepath)
+
     def train(self, training=True):
         self.training = training
         self.actor.train(training)

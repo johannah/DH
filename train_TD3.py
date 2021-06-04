@@ -10,9 +10,10 @@ import sys
 import pickle
 import torch
 from IPython import embed
-from utils import torch_dh_transform, create_results_dir, find_latest_checkpoint
-from replay_buffer import ReplayBuffer, compress_frame
+from dh_utils import  create_results_dir, find_latest_checkpoint
+from replay_buffer_TD3 import ReplayBuffer, compress_frame
 import TD3
+from collections import deque
 
    
 """
@@ -31,23 +32,66 @@ di distance from xi-1 to xi along zi
 thetai angle from xi-1 to xi about zi
 
 """
+import gym.spaces as spaces
+
+class EnvStack():
+    def __init__(self, env, k):
+        self.env = env
+        self._k = k
+        self._body = deque([], maxlen=k)
+        self._state = deque([], maxlen=k)
+        self.body_space = k*len(self.env.physics.data.qpos)
+        self.control_min = self.env.action_spec().minimum[0]
+        self.control_max = self.env.action_spec().maximum[0]
+        self.control_shape = self.env.action_spec().shape
+        self.action_space = spaces.Box(self.control_min, self.control_max, self.control_shape)
+        total_size = 0
+        self.obs_keys = list(self.env.observation_spec().keys())
+        for i, j in  self.env.observation_spec().items():
+            l = len(j.shape)
+            if l == 0: total_size +=1
+            elif l == 1: total_size +=j.shape[0]
+            elif l == 2: total_size +=(j.shape[0]*j.shape[1])
+            else:
+                 print("write code to handle this shape",j.shape); sys.exit()
+          
+        self.observation_space = spaces.Box(-np.inf, np.inf, (total_size*k, ))
+
+    def make_obs(self, obs):
+        a = []
+        for i in self.obs_keys:
+            a.append(obs[i].ravel())
+        return np.concatenate(a)
+
+    def reset(self):
+        o = self.make_obs(self.env.reset().observation)
+        b = self.env.physics.data.qpos
+        for _ in range(self._k):
+            self._state.append(o)
+            self._body.append(b)
+        return self._get_obs(), self._get_body()
+
+    def step(self, action):
+        o = self.env.step(action)
+        done = o.step_type.last()
+        self._state.append(self.make_obs(o.observation))
+        b = self.env.physics.data.qpos
+        self._body.append(b)
+        return self._get_obs(), self._get_body(), o.reward, done, o.step_type
+
+    def _get_obs(self):
+        assert len(self._state) == self._k
+        return np.concatenate(list(self._state), axis=0)
+
+    def _get_body(self):
+        assert len(self._body) == self._k
+        return np.concatenate(list(self._body), axis=0)
 
 
-
-def format_observation(o):
-    obs = obs_placeholder*0.0
-    cnt = 0
-    for u in use_states:
-        val = o[u].flatten()[None]
-        s = val.shape[1]
-        obs[0,cnt:cnt+s] = val
-        cnt += s
-    return obs[:1,:cnt]
 
 def run_eval(num_train_steps, num_eval_episodes=10):
     for ep in range(num_eval_episodes):
-        ts, reward, d, o = env.reset()
-        state = format_observation(o)
+        state,body = env.reset()
         if use_frames:
             frame_compressed = compress_frame(env.physics.render(height=h, width=w))
         e_step = 0
@@ -59,15 +103,14 @@ def run_eval(num_train_steps, num_eval_episodes=10):
                     policy.select_action(state)
                 ).clip(-kwargs['max_action'], kwargs['max_action'])
      
-            ts, reward, _, next_o = env.step(action) # take a random action
-            next_state = format_observation(next_o)
+            next_state, next_body, reward, done, info = env.step(action) # take a random action
             e_step += 1
             if e_step == 100:
                 done = True
             if use_frames:
                 next_frame_compressed = compress_frame(env.physics.render(height=h, width=w))
      
-                eval_replay_buffer.add(state, action, reward, next_state, int(done), 
+                eval_replay_buffer.add(state, body, action, reward, next_state, next_body, int(done), 
                               frame_compressed=frame_compressed, 
                               next_frame_compressed=next_frame_compressed)
                 frame_compressed = next_frame_compressed
@@ -79,16 +122,15 @@ def run_eval(num_train_steps, num_eval_episodes=10):
     pickle.dump(eval_replay_buffer, open(modelbase+'_eval.pkl', 'wb'))
     
 
-
-
 def run_train(num_steps=0, num_episodes=1000):
     for ep in range(num_episodes):
-        ts, reward, d, o = env.reset()
-        state = format_observation(o)
+        #ts, reward, d, o = env.reset()
+        done = False
+        state, body =  env.reset()
         if use_frames:
             frame_compressed = compress_frame(env.physics.render(height=h, width=w))
         e_step = 0
-        while not ts.last():
+        while not done:
             if num_steps < start_timesteps:
                 action = random_state.uniform(low=-kwargs['max_action'], high=kwargs['max_action'], size=action_dim)
             else:
@@ -100,8 +142,9 @@ def run_train(num_steps=0, num_episodes=1000):
     
      
  
-            ts, reward, _, next_o = env.step(action) # take a random action
-            next_state = format_observation(next_o)
+            next_state, next_body, reward, done, info = env.step(action) # take a random action
+            #ts, reward, _, next_o = env.step(action) # take a random action
+            #next_state = format_observation(next_o)
             #angles = torch.FloatTensor(o['position']).to(device)
             #T0 = torch_dh_transform(angles[0][None], d[0], r[0], alpha[0], device)
             #_T1 = torch_dh_transform(angles[1][None], d[1], r[1], alpha[1], device)
@@ -110,14 +153,15 @@ def run_train(num_steps=0, num_episodes=1000):
             if use_frames:
                 next_frame_compressed = compress_frame(env.physics.render(height=h, width=w))
      
-                replay_buffer.add(state, action, reward, next_state, int(ts.last()), 
+                replay_buffer.add(state, action, reward, next_state, done, 
                               frame_compressed=frame_compressed, 
                               next_frame_compressed=next_frame_compressed)
                 frame_compressed = next_frame_compressed
             else:
-                replay_buffer.add(state, action, reward, next_state, int(ts.last()))
+                replay_buffer.add(state, action, reward, next_state, done)
      
             state = next_state
+            body = next_body
             num_steps+=1
             if num_steps > start_timesteps:
                 policy.train(num_steps, replay_buffer, batch_size)
@@ -156,11 +200,12 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--eval', default=False, action='store_true')
     parser.add_argument('--use_frames', default=False, action='store_true')
-    parser.add_argument('--env', default='reacher', type=str)
-    parser.add_argument('--task', default='easy', type=str)
+    parser.add_argument('--env', default='manipulator', type=str)
+    parser.add_argument('--task', default='bring_ball', type=str)
     parser.add_argument('--load_model', default='')
     parser.add_argument('--device', default='cuda')
     parser.add_argument('--seed', default=0, type=int)
+    parser.add_argument('--k', default=3, type=int, help='num timesteps to consider')
     parser.add_argument('--num_eval_episodes', default=10, type=int)
     parser.add_argument('--exp_name_modifier', default='')
     policy_name = 'TD3'
@@ -187,21 +232,13 @@ if __name__ == '__main__':
         cam_dim = (0,0,0)
 
     random_state = np.random.RandomState(seed)
-    env = suite.load(args.env, args.task)
-  
-    use_states = env.observation_spec().keys()
-    print(use_states)
-    state_dim = 0
-    for k in use_states:
-        # TODO does not solve multidim 
-        state_dim+=env.observation_spec()[k].shape[0]
-    action_dim = env.action_spec().shape[0]
-    # TODO does not solve joint-dependent max/min
-    max_action = env.action_spec().maximum.max()
-    min_action = env.action_spec().minimum.min()
+    env = EnvStack(suite.load(args.env, args.task), args.k)
+    state_dim=env.observation_space.shape[0]
+    action_dim = env.action_space.shape[0]
+    ## TODO does not solve joint-dependent max/min
+    max_action = 1 #env.action_spec().maximum.max()
+    min_action = -1 #env.action_spec().minimum.min()
 
-    obs_placeholder = np.zeros((1,state_dim))
-   
     save_freq = 10000
     start_timesteps = 25000
     batch_size = 256 

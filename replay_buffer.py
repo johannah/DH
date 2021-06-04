@@ -32,6 +32,40 @@ class ReplayBuffer(object):
     def __len__(self):
         return self.capacity if self.full else self.idx
 
+    def save(self, filepath):
+        thru = self.idx
+        if self.full:
+            thru = self.capacity
+        np.savez(filepath, idx=self.idx, full=self.full, device=self.device, 
+                          capacity=self.capacity, 
+                          obses=self.obses[:thru], next_obses=self.next_obses[:thru], 
+                          bodies=self.bodies[:thru], next_bodies=self.next_bodies[:thru], 
+                          actions=self.actions[:thru], rewards=self.rewards[:thru], 
+                          not_dones=self.not_dones[:thru], 
+                          not_dones_no_max=self.not_dones_no_max[:thru])
+
+    def load(self, filepath):
+        thru = self.idx
+        ff = np.load(filepath)
+        capacity = ff['capacity']
+        self.idx=ff['idx']
+        self.full=ff['full']
+        if self.full:
+            thru = self.capacity
+        else:
+            thru = idx 
+        assert thru <= self.capacity
+        print("loading %s examples from replay buffer"%thru)
+        self.obses=ff['obses'][:thru]
+        self.next_obses=ff['next_obses'][:thru] 
+        self.bodies=ff['bodies'][:thru]
+        self.next_bodies=ff['next_bodies'][:thru]
+        self.actions=ff['actions'][:thru]
+        self.rewards=ff['rewards'][:thru]
+        self.not_dones=ff['not_dones'][:thru]
+        self.not_dones_no_max=ff['not_dones_no_max'][:thru]
+
+
     def add(self, obs, body, action, reward, next_obs, next_body, done, done_no_max):
         np.copyto(self.obses[self.idx], obs)
         np.copyto(self.bodies[self.idx], body)
