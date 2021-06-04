@@ -17,7 +17,7 @@ import utils
 from logger import Logger
 from replay_buffer import ReplayBuffer
 from video import VideoRecorder
-
+import pickle
 torch.backends.cudnn.benchmark = True
 
 
@@ -108,11 +108,13 @@ class Workspace(object):
                 episode_step += 1
 
             average_episode_reward += episode_reward
-            self.video_recorder.save(f'{self.step}.mp4')
+            self.video_recorder.save('%08d_movie.mp4'%self.step)
         average_episode_reward /= self.cfg.num_eval_episodes
         self.logger.log('eval/episode_reward', average_episode_reward,
                         self.step)
         self.logger.dump(self.step)
+        self.agent.save('%08d_model.pt'%self.step)
+        self.replay_buffer.save('%08d_replay'%self.step)
 
     def run(self):
         episode, episode_reward, episode_step, done = 0, 0, 1, True
