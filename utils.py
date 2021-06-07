@@ -13,6 +13,7 @@ import torch.nn.functional as F
 from skimage.util.shape import view_as_windows
 from torch import distributions as pyd
 from IPython import embed; 
+import gym.spaces as spaces
 
 class eval_mode(object):
     def __init__(self, *models):
@@ -93,6 +94,123 @@ def to_np(t):
         return np.array([])
     else:
         return t.cpu().detach().numpy()
+
+class EnvStackRobosuite():
+    def __init__(self, env, k):
+        self.env = env
+        self._k = k
+        self._body = deque([], maxlen=k)
+        self._state = deque([], maxlen=k)
+        self.body_space = k*len(self.env.robots[0]._joint_positions)
+        self.control_min = self.env.action_spec[0].min()
+        self.control_max = self.env.action_spec[1].max()
+        self.control_shape = self.env.action_spec[0].shape[0]
+        total_size = 0
+        self.obs_keys = list(self.env.observation_spec().keys())
+        for i, j in  self.env.observation_spec().items():
+            if type(j) in [int, np.bool]: total_size +=1
+            else:
+                l = len(j.shape)
+                if l == 0: total_size +=1
+                elif l == 1: total_size +=j.shape[0]
+                elif l == 2: total_size +=(j.shape[0]*j.shape[1])
+                else:
+                     print("write code to handle this shape",j.shape); sys.exit()
+          
+        self.observation_space = spaces.Box(-np.inf, np.inf, (total_size*k, ))
+
+    def make_obs(self, obs):
+        a = []
+        for i in self.obs_keys:
+            o = obs[i]
+            if type(o) in [np.ndarray, np.array, list]:
+               o = np.ravel(o)
+            else:
+              o = np.array([o])
+            a.append(o)
+        return np.concatenate(a)
+
+    def reset(self):
+        o = self.make_obs(self.env.reset())
+        b = self.env.robots[0]._joint_positions
+        for _ in range(self._k):
+            self._state.append(o)
+            self._body.append(b)
+        return self._get_obs(), self._get_body()
+
+    def step(self, action):
+        state, reward, done, info = self.env.step(action)
+        self._state.append(self.make_obs(state))
+        b = self.env.robots[0]._joint_positions
+        self._body.append(b)
+        return self._get_obs(), self._get_body(), reward, done, info 
+
+    def _get_obs(self):
+        assert len(self._state) == self._k
+        return np.concatenate(list(self._state), axis=0)
+
+    def _get_body(self):
+        assert len(self._body) == self._k
+        return np.concatenate(list(self._body), axis=0)
+
+
+class EnvStack():
+    """ stack for dm_control """
+    def __init__(self, env, k):
+        self.env = env
+        self._k = k
+        self._body = deque([], maxlen=k)
+        self._state = deque([], maxlen=k)
+        self.body_space = k*len(self.env.physics.data.qpos)
+        self.control_min = self.env.action_spec().minimum[0]
+        self.control_max = self.env.action_spec().maximum[0]
+        self.control_shape = self.env.action_spec().shape
+        
+        self.action_space = spaces.Box(self.control_min, self.control_max, self.control_shape)
+        total_size = 0
+        self.obs_keys = list(self.env.observation_spec().keys())
+        for i, j in  self.env.observation_spec().items():
+            l = len(j.shape)
+            if l == 0: total_size +=1
+            elif l == 1: total_size +=j.shape[0]
+            elif l == 2: total_size +=(j.shape[0]*j.shape[1])
+            else:
+                 print("write code to handle this shape",j.shape); sys.exit()
+          
+        self.observation_space = spaces.Box(-np.inf, np.inf, (total_size*k, ))
+
+    def make_obs(self, obs):
+        a = []
+        for i in self.obs_keys:
+            a.append(obs[i].ravel())
+        return np.concatenate(a)
+
+    def reset(self):
+        o = self.make_obs(self.env.reset().observation)
+        b = self.env.physics.data.qpos
+        for _ in range(self._k):
+            self._state.append(o)
+            self._body.append(b)
+        return self._get_obs(), self._get_body()
+
+    def step(self, action):
+        o = self.env.step(action)
+        done = o.step_type.last()
+        self._state.append(self.make_obs(o.observation))
+        b = self.env.physics.data.qpos
+        self._body.append(b)
+        return self._get_obs(), self._get_body(), o.reward, done, o.step_type
+
+    def _get_obs(self):
+        assert len(self._state) == self._k
+        return np.concatenate(list(self._state), axis=0)
+
+    def _get_body(self):
+        assert len(self._body) == self._k
+        return np.concatenate(list(self._body), axis=0)
+
+
+
 
 class FrameStack(gym.Wrapper):
     def __init__(self, env, k):

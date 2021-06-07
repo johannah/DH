@@ -10,6 +10,7 @@ import sys
 import pickle
 import torch
 from IPython import embed
+from utils import EnvStack
 from dh_utils import  create_results_dir, find_latest_checkpoint
 from replay_buffer_TD3 import ReplayBuffer, compress_frame
 import TD3
@@ -33,61 +34,6 @@ thetai angle from xi-1 to xi about zi
 
 """
 import gym.spaces as spaces
-
-class EnvStack():
-    def __init__(self, env, k):
-        self.env = env
-        self._k = k
-        self._body = deque([], maxlen=k)
-        self._state = deque([], maxlen=k)
-        self.body_space = k*len(self.env.physics.data.qpos)
-        self.control_min = self.env.action_spec().minimum[0]
-        self.control_max = self.env.action_spec().maximum[0]
-        self.control_shape = self.env.action_spec().shape
-        self.action_space = spaces.Box(self.control_min, self.control_max, self.control_shape)
-        total_size = 0
-        self.obs_keys = list(self.env.observation_spec().keys())
-        for i, j in  self.env.observation_spec().items():
-            l = len(j.shape)
-            if l == 0: total_size +=1
-            elif l == 1: total_size +=j.shape[0]
-            elif l == 2: total_size +=(j.shape[0]*j.shape[1])
-            else:
-                 print("write code to handle this shape",j.shape); sys.exit()
-          
-        self.observation_space = spaces.Box(-np.inf, np.inf, (total_size*k, ))
-
-    def make_obs(self, obs):
-        a = []
-        for i in self.obs_keys:
-            a.append(obs[i].ravel())
-        return np.concatenate(a)
-
-    def reset(self):
-        o = self.make_obs(self.env.reset().observation)
-        b = self.env.physics.data.qpos
-        for _ in range(self._k):
-            self._state.append(o)
-            self._body.append(b)
-        return self._get_obs(), self._get_body()
-
-    def step(self, action):
-        o = self.env.step(action)
-        done = o.step_type.last()
-        self._state.append(self.make_obs(o.observation))
-        b = self.env.physics.data.qpos
-        self._body.append(b)
-        return self._get_obs(), self._get_body(), o.reward, done, o.step_type
-
-    def _get_obs(self):
-        assert len(self._state) == self._k
-        return np.concatenate(list(self._state), axis=0)
-
-    def _get_body(self):
-        assert len(self._body) == self._k
-        return np.concatenate(list(self._body), axis=0)
-
-
 
 def run_eval(num_train_steps, num_eval_episodes=10):
     for ep in range(num_eval_episodes):
@@ -119,7 +65,7 @@ def run_eval(num_train_steps, num_eval_episodes=10):
      
             state = next_state
 
-    pickle.dump(eval_replay_buffer, open(modelbase+'_eval.pkl', 'wb'))
+    pickle.dump(eval_replay_buffer, open(modelbase+'_eval.pkl', 'wb'), protocol=4)
     
 
 def run_train(num_steps=0, num_episodes=1000):
@@ -167,8 +113,8 @@ def run_train(num_steps=0, num_episodes=1000):
                 policy.train(num_steps, replay_buffer, batch_size)
             if not num_steps % save_freq:
                 step_filepath = os.path.join(savebase, '{}_S{:05d}_{:010d}'.format(exp_name, seed, num_steps))
-                pickle.dump(replay_buffer, open(step_filepath+'.pkl', 'wb'))
                 policy.save(step_filepath+'.pt')
+                #pickle.dump(eval_replay_buffer, open(modelbase+'_eval.pkl', 'wb'), protocol=4)
 
     step_filepath = os.path.join(savebase, '{}_S{:05d}_{:010d}'.format(exp_name, seed, num_steps))
     pickle.dump(replay_buffer, open(step_filepath+'.pkl', 'wb'))
@@ -282,7 +228,7 @@ if __name__ == '__main__':
                                  seed=seed)
  
         run_eval(steps, args.num_eval_episodes)
-        pickle.dump(eval_replay_buffer, open(modelbase+'eval_NE%05d.pkl'%args.num_eval_episodes, 'wb'))
+        #pickle.dump(eval_replay_buffer, open(modelbase+'eval_NE%05d.pkl'%args.num_eval_episodes, 'wb'))
         plot_all(eval_replay_buffer, modifier='_eval', use_frames=args.use_frames)
     else:
         run_train(steps)

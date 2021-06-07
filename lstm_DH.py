@@ -17,9 +17,9 @@ import os, sys
 import numpy as np
 import shutil
 
-from utils import find_latest_checkpoint, create_results_dir, plot_losses
-from utils import robotDH, angle2sincos, sincos2angle
-from utils import load_robosuite_data, get_data_norm_params
+from dh_utils import find_latest_checkpoint, create_results_dir, plot_losses
+from dh_utils import robotDH, angle2sincos, sincos2angle
+from dh_utils import load_robosuite_data, get_data_norm_params
 from IPython import embed 
 import replay_buffer
 import imageio
@@ -142,6 +142,7 @@ def eval_model(data, phases=['train', 'valid'], n=20, shuffle=False, teacher_for
     #env = suite.load(args.env, args.task)
     for phase in phases:
         # time, batch, features
+        total_err = 0
         n_samples = data[phase]['inputs'].shape[1]
         indexes = np.arange(0, n_samples)
         if shuffle:
@@ -165,24 +166,26 @@ def eval_model(data, phases=['train', 'valid'], n=20, shuffle=False, teacher_for
 
             ee_target = data[phase]['target_ee'][:,indexes[st:en]]
             ee_pred = ee_pred.cpu().detach().numpy()
+            total_err += (ee_pred**2-ee_target**2).sum() 
 
-            for ii in range(ee_pred.shape[1]):
-                plt.figure()
-                plt.scatter(ee_target[0:1,ii,0], ee_target[0:1,ii,1], c='g', marker='o')
-                plt.scatter(ee_target[-2:-1,ii,0], ee_target[-2:-1,ii,1], c='r', marker='x')
-                plt.scatter(ee_target[:,ii,0], ee_target[:,ii,1], marker='o')
-                plt.scatter(ee_pred[:,ii,0], ee_pred[:,ii,1], label='pred')
-                plt.legend()
-                if args.teacher_force:
-                    fname = modelbase+'%s_tf_%04d.png'%(phase, ii)
-                else:
-                    fname = modelbase+'%s_li%02d_%04d.png'%(phase, args.lead_in, ii)
-                print('plotting', fname)
-                plt.savefig(fname)
-                plt.close()
+            #for ii in range(ee_pred.shape[1]):
+            #    plt.figure()
+            #    plt.scatter(ee_target[0:1,ii,0], ee_target[0:1,ii,1], c='g', marker='o')
+            #    plt.scatter(ee_target[-2:-1,ii,0], ee_target[-2:-1,ii,1], c='r', marker='x')
+            #    plt.scatter(ee_target[:,ii,0], ee_target[:,ii,1], marker='o')
+            #    plt.scatter(ee_pred[:,ii,0], ee_pred[:,ii,1], label='pred')
+            #    plt.legend()
+            #    if args.teacher_force:
+            #        fname = modelbase+'%s_tf_%04d.png'%(phase, ii)
+            #    else:
+            #        fname = modelbase+'%s_li%02d_%04d.png'%(phase, args.lead_in, ii)
+            #    print('plotting', fname)
+            #    plt.savefig(fname)
+            #    plt.close()
             st = en
             en = min([st+batch_size, n+1])
             bs = en-st
+        print(phase, total_err)
 
 
 def plot_ee(ee, frames):
@@ -268,7 +271,8 @@ if __name__ == '__main__':
     import argparse
     from glob import glob
     parser = argparse.ArgumentParser()
-    parser.add_argument('--load_replay', default='results/21-02-02_reacher_easy_00000_05/reacher_easy_00000_S00000_0000980000eval_NE01200.pkl')
+    #parser.add_argument('--load_replay', default='../DH_old/results/21-02-02_reacher_easy_00000_05/reacher_easy_00000_S00000_0000980000eval_NE01200.pkl')
+    parser.add_argument('--load_replay', default='../DH_old/results/21-02-02_reacher_easy_double_TD3_00000__01/reacher_easy_double_TD3_00000__S00000_0001000000_eval.pkl')
     parser.add_argument('--eval', default=False, action='store_true')
     parser.add_argument('-tf', '--teacher_force', default=False, action='store_true')
     parser.add_argument('--load_model', default='')
@@ -277,7 +281,7 @@ if __name__ == '__main__':
     parser.add_argument('-li', '--lead_in', default=5, type=int)
     parser.add_argument('--robot_name', default='dm_reacher', choices=['jaco27DOF', 'dm_reacher'])
     args = parser.parse_args()
-    exp_name = 'v5_lstm_act_%s'%(args.loss)
+    exp_name = 'v5_lstm_act_long_%s'%(args.loss)
     
     device = args.device
     results_dir = 'results'
@@ -308,29 +312,46 @@ if __name__ == '__main__':
     output_size = 2
 
     lstm = LSTM(input_size=input_size, output_size=output_size, hidden_size=hidden_size).to(device)
+    criterion = nn.MSELoss()
 
-    if not args.eval and args.load_model == '':
-        savebase = create_results_dir(exp_name, results_dir=results_dir)
-        step = 0
-    else:
-        if os.path.isdir(args.load_model):
-            savebase = args.load_model
-            loadpath = find_latest_checkpoint(args.load_model)
-        else:
-            loadpath  = args.load_model
-            savebase = os.path.split(args.load_model)[0]
-            
-        modelbase = loadpath.replace('.pt', '_')
-        load_dict = torch.load(loadpath, map_location=device)
-        step = load_dict['train_cnt']
-        lstm.load_state_dict(load_dict['model'])
+    #if not args.eval and args.load_model == '':
+    #    savebase = create_results_dir(exp_name, results_dir=results_dir)
+    #    step = 0 else: if os.path.isdir(args.load_model): savebase = args.load_model loadpath = find_latest_checkpoint(args.load_model)
+    #    else:
+    #        loadpath  = args.load_model
+    #        savebase = os.path.split(args.load_model)[0]
+    #        
+    #    modelbase = loadpath.replace('.pt', '_')
+    #    load_dict = torch.load(loadpath, map_location=device)
+    #    step = load_dict['train_cnt']
+    #    lstm.load_state_dict(load_dict['model'])
 
-    if args.eval:
-        plot_losses(loadpath.replace('.pt', '_losses.npz'))
-        eval_model(data, phases=['train', 'valid'], n=20, shuffle=False)
-    else:
-        criterion = nn.MSELoss()
-        # use LBFGS as optimizer since we can load the whole data to train
-        opt = optim.Adam(lstm.parameters(), lr=0.0001)
-        train(data, step,  n_epochs=10000)
-     
+    #if args.eval:
+    #    plot_losses(loadpath.replace('.pt', '_losses.npz'))
+    #    eval_model(data, phases=['train', 'valid'], n=20, shuffle=False)
+    #else:
+    #    # use LBFGS as optimizer since we can load the whole data to train
+    #    opt = optim.Adam(lstm.parameters(), lr=0.0001)
+    #    train(data, step,  n_epochs=10000)
+
+    fp_mse= '../DH_old/results/21-02-09_v5_lstm_act_angle_00/model_0009821792.pt'
+    fp_dh = '../DH_old/results//21-02-08_v5_lstm_act_DH_00/model_0009821792.pt'
+    modelbase = fp_mse.replace('.pt', '_')
+    compare_plot_losses(fp_mse.replace('.pt', '_losses.npz'), fp_dh.replace('.pt', '_losses.npz'))
+
+    #mse_load_dict = torch.load(fp_mse, map_location=device)
+    #step = mse_load_dict['train_cnt']
+    #lstm.load_state_dict(mse_load_dict['model'])
+
+    
+"""
+(drq) jhansen@cilantro:/usr/local/data/jaco/DH$ python lstm_DH.py --load_model ../DH_old/results/21-02-09_v5_lstm_act_angle_00/model_0009821792.pt --eval
+saving loss image: ../DH_old/results/21-02-09_v5_lstm_act_angle_00/model_0009821792_losses.png
+train 0.0010039136977866292
+valid 0.0008980428101494908
+
+(drq) jhansen@cilantro:/usr/local/data/jaco/DH$ python lstm_DH.py --load_model ../DH_old/results//21-02-08_v5_lstm_act_DH_00/model_0009821792.pt --eval
+saving loss image: ../DH_old/results//21-02-08_v5_lstm_act_DH_00/model_0009821792_losses.png
+train 0.0018169446848332882
+valid 0.001639709691517055
+"""
