@@ -11,7 +11,6 @@ from gym import Env
 import robosuite as suite
 from robosuite.wrappers.gym_wrapper import GymWrapper
 import json
-from dh_utils import seed_everything
 from imageio import mimwrite
 from utils import EnvStackRobosuite
 from replay_buffer_TD3 import ReplayBuffer, compress_frame
@@ -21,7 +20,8 @@ import torch
 from IPython import embed
 import pickle
 import TD3
-from dh_utils import seed_everything, robotDH, quaternion_matrix, quaternion_from_matrix, robot_attributes
+from dh_utils import seed_everything, normalize_joints
+from dh_utils import robotDH, quaternion_matrix, quaternion_from_matrix, robot_attributes
 import robosuite.utils.macros as macros
 macros.IMAGE_CONVENTION = 'opencv'
 torch.set_num_threads(4)
@@ -133,13 +133,6 @@ def make_savedir(cfg):
     os.system('cp -r %s %s'%(args.cfg, os.path.join(savedir, 'cfg.txt')))
     return savedir
 
-def normalize_joints(angles):
-    while angles.max() > np.pi:
-        angles[angles>np.pi] -= 2*np.pi
-    while angles.min() < -np.pi:
-        angles[angles<-np.pi] += 2*np.pi
-    return angles
-
 def run_eval(env, policy, replay_buffer, kwargs, cfg, cam_dim, savebase):
 
     robot_name = cfg['robot']['robots'][0]
@@ -206,6 +199,7 @@ def run_eval(env, policy, replay_buffer, kwargs, cfg, cam_dim, savebase):
     # ensure this holds for other robots
     base_matrix[1,1] = -1 
     base_matrix[2,2] = -1
+    replay_buffer.base_matrix = base_matrix
 
     joint_positions = np.array(joint_positions)
     next_joint_positions = np.array(next_joint_positions)
@@ -218,7 +212,6 @@ def run_eval(env, policy, replay_buffer, kwargs, cfg, cam_dim, savebase):
     replay_buffer.next_norm_joint_positions = next_joint_positions
     replay_buffer.next_joint_positions = next_norm_joint_positions
     replay_buffer.robot_name = robot_name
-    replay_buffer.base_matrix = base_matrix
     replay_buffer.cfg = cfg
     pickle.dump(replay_buffer, open(savebase + '.pkl', 'wb'))
     plt.figure()

@@ -44,6 +44,19 @@ DH_attributes_dm_reacher = {
 robot_attributes = {'dm_reacher':DH_attributes_dm_reacher, 
                     'Jaco':DH_attributes_jaco27DOF, 
                    }
+
+def normalize_joints(angles):
+    """
+    This removes the wrapping from joint angles and ensures joint vals are bt -pi < vals < pi
+    angles: np.array of joint angles in radians
+    """
+    while angles.max() > np.pi:
+        angles[angles>np.pi] -= 2*np.pi
+    while angles.min() < -np.pi:
+        angles[angles<-np.pi] += 2*np.pi
+    return angles
+
+
 def quaternion_from_matrix(matrix):
     """Return quaternion from rotation matrix.
     from: https://github.com/BerkeleyAutomation/autolab_core/blob/master/autolab_core/transformations.py
@@ -183,16 +196,13 @@ class robotDH():
             convert joint angle to end effector for reacher for ts,bs,f
         """
         # ts, bs, feat
-        ts, bs, fs = angles.shape
-        ee_pred = torch.zeros((ts,bs,2)).to(self.device)
-        # TODO join the time/batch so i don't have to loop this
-        # TODO this transform is pretty dependent on the 7 features in jaco
-        for b in range(bs):
-            T0 = self.torch_dh_transform(0, angles[:,b,0])
-            T1 = self.torch_dh_transform(1, angles[:,b,1])
-            T = torch.matmul(T0, T1)
-            ee_pred[:,b] = ee_pred[:,b] + T[:,:2,3]
-        return ee_pred
+        ts, fs = angles.shape
+        ee_pred = torch.zeros((ts,4,4)).to(self.device)
+        _T = base_matrix
+        for _a in range(fs):        
+            _T1 = self.torch_dh_transform(_a, angles[:,_a])
+            _T = torch.matmul(_T, _T1)
+        return _T
 
 
     def batch_angle2ee_reacher(self, angles):
