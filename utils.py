@@ -98,7 +98,7 @@ def to_np(t):
 class EnvStackRobosuite():
     def __init__(self, env, k):
         self.env = env
-        self._k = k
+        self.k = k
         self._body = deque([], maxlen=k)
         self._state = deque([], maxlen=k)
         self.body_space = k*len(self.env.robots[0]._joint_positions)
@@ -107,16 +107,20 @@ class EnvStackRobosuite():
         self.control_shape = self.env.action_spec[0].shape[0]
         total_size = 0
         self.obs_keys = list(self.env.observation_spec().keys())
+        self.obs_sizes = {}
+        self.obs_specs = {}
         for i, j in  self.env.observation_spec().items():
-            if type(j) in [int, np.bool]: total_size +=1
+            if type(j) in [int, np.bool]: s = 1
             else:
                 l = len(j.shape)
-                if l == 0: total_size +=1
-                elif l == 1: total_size +=j.shape[0]
-                elif l == 2: total_size +=(j.shape[0]*j.shape[1])
+                if l == 0: s = 1
+                elif l == 1: s = j.shape[0]
+                elif l == 2: s = (j.shape[0]*j.shape[1])
                 else:
                      print("write code to handle this shape",j.shape); sys.exit()
-          
+            total_size +=s
+            self.obs_sizes[i] = s
+            self.obs_specs[i] = j
         self.observation_space = spaces.Box(-np.inf, np.inf, (total_size*k, ))
 
     def make_obs(self, obs):
@@ -133,7 +137,7 @@ class EnvStackRobosuite():
     def reset(self):
         o = self.make_obs(self.env.reset())
         b = self.env.robots[0]._joint_positions
-        for _ in range(self._k):
+        for _ in range(self.k):
             self._state.append(o)
             self._body.append(b)
         return self._get_obs(), self._get_body()
@@ -146,11 +150,11 @@ class EnvStackRobosuite():
         return self._get_obs(), self._get_body(), reward, done, info 
 
     def _get_obs(self):
-        assert len(self._state) == self._k
+        assert len(self._state) == self.k
         return np.concatenate(list(self._state), axis=0)
 
     def _get_body(self):
-        assert len(self._body) == self._k
+        assert len(self._body) == self.k
         return np.concatenate(list(self._body), axis=0)
 
 
@@ -158,7 +162,7 @@ class EnvStack():
     """ stack for dm_control """
     def __init__(self, env, k):
         self.env = env
-        self._k = k
+        self.k = k
         self._body = deque([], maxlen=k)
         self._state = deque([], maxlen=k)
         self.body_space = k*len(self.env.physics.data.qpos)
@@ -188,7 +192,7 @@ class EnvStack():
     def reset(self):
         o = self.make_obs(self.env.reset().observation)
         b = self.env.physics.data.qpos
-        for _ in range(self._k):
+        for _ in range(self.k):
             self._state.append(o)
             self._body.append(b)
         return self._get_obs(), self._get_body()
@@ -202,11 +206,11 @@ class EnvStack():
         return self._get_obs(), self._get_body(), o.reward, done, o.step_type
 
     def _get_obs(self):
-        assert len(self._state) == self._k
+        assert len(self._state) == self.k
         return np.concatenate(list(self._state), axis=0)
 
     def _get_body(self):
-        assert len(self._body) == self._k
+        assert len(self._body) == self.k
         return np.concatenate(list(self._body), axis=0)
 
 
@@ -215,7 +219,7 @@ class EnvStack():
 class FrameStack(gym.Wrapper):
     def __init__(self, env, k):
         gym.Wrapper.__init__(self, env)
-        self._k = k
+        self.k = k
         self._frames = deque([], maxlen=k)
         self._body = deque([], maxlen=k)
         shp = env.observation_space.shape
@@ -230,7 +234,7 @@ class FrameStack(gym.Wrapper):
     def reset(self):
         obs = self.env.reset()
         b = self.env.env._env._physics.data.qpos
-        for _ in range(self._k):
+        for _ in range(self.k):
             self._frames.append(obs)
             self._body.append(b)
         return self._get_obs(), self._get_body()
@@ -243,11 +247,11 @@ class FrameStack(gym.Wrapper):
         return self._get_obs(), self._get_body(), reward, done, info
 
     def _get_obs(self):
-        assert len(self._frames) == self._k
+        assert len(self._frames) == self.k
         return np.concatenate(list(self._frames), axis=0)
 
     def _get_body(self):
-        assert len(self._body) == self._k
+        assert len(self._body) == self.k
         return np.concatenate(list(self._body), axis=0)
 
 

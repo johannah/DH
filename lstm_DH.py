@@ -314,34 +314,26 @@ if __name__ == '__main__':
     lstm = LSTM(input_size=input_size, output_size=output_size, hidden_size=hidden_size).to(device)
     criterion = nn.MSELoss()
 
-    #if not args.eval and args.load_model == '':
-    #    savebase = create_results_dir(exp_name, results_dir=results_dir)
-    #    step = 0 else: if os.path.isdir(args.load_model): savebase = args.load_model loadpath = find_latest_checkpoint(args.load_model)
-    #    else:
-    #        loadpath  = args.load_model
-    #        savebase = os.path.split(args.load_model)[0]
-    #        
-    #    modelbase = loadpath.replace('.pt', '_')
-    #    load_dict = torch.load(loadpath, map_location=device)
-    #    step = load_dict['train_cnt']
-    #    lstm.load_state_dict(load_dict['model'])
+    if not args.eval and args.load_model == '':
+        savebase = create_results_dir(exp_name, results_dir=results_dir)
+        step = 0 else: if os.path.isdir(args.load_model): savebase = args.load_model loadpath = find_latest_checkpoint(args.load_model)
+        else:
+            loadpath  = args.load_model
+            savebase = os.path.split(args.load_model)[0]
+            
+        modelbase = loadpath.replace('.pt', '_')
+        load_dict = torch.load(loadpath, map_location=device)
+        step = load_dict['train_cnt']
+        lstm.load_state_dict(load_dict['model'])
 
-    #if args.eval:
-    #    plot_losses(loadpath.replace('.pt', '_losses.npz'))
-    #    eval_model(data, phases=['train', 'valid'], n=20, shuffle=False)
-    #else:
-    #    # use LBFGS as optimizer since we can load the whole data to train
-    #    opt = optim.Adam(lstm.parameters(), lr=0.0001)
-    #    train(data, step,  n_epochs=10000)
+    if args.eval:
+        plot_losses(loadpath.replace('.pt', '_losses.npz'))
+        eval_model(data, phases=['train', 'valid'], n=20, shuffle=False)
+    else:
+        # use LBFGS as optimizer since we can load the whole data to train
+        opt = optim.Adam(lstm.parameters(), lr=0.0001)
+        train(data, step,  n_epochs=10000)
 
-    fp_mse= '../DH_old/results/21-02-09_v5_lstm_act_angle_00/model_0009821792.pt'
-    fp_dh = '../DH_old/results//21-02-08_v5_lstm_act_DH_00/model_0009821792.pt'
-    modelbase = fp_mse.replace('.pt', '_')
-    compare_plot_losses(fp_mse.replace('.pt', '_losses.npz'), fp_dh.replace('.pt', '_losses.npz'))
-
-    #mse_load_dict = torch.load(fp_mse, map_location=device)
-    #step = mse_load_dict['train_cnt']
-    #lstm.load_state_dict(mse_load_dict['model'])
 
     
 """

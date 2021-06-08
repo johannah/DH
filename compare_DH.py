@@ -5,12 +5,14 @@ import numpy as np
 
 def compare_plot_losses(mse_loss_path, dh_loss_path):
      plt.figure()
+     mm = 10
      for loss_name, loss_path in [('mse', mse_loss_path), ('DH', dh_loss_path)]:
          losses = np.load(loss_path)
          for phase, ll in [ ('valid',losses['valid']),('train', losses['train'])]:
-             plt.plot(ll[1:,0], ll[1:,1], label=loss_name+phase, marker='o')
+             plt.plot(ll[:mm,0], ll[:mm,1], label=loss_name+phase, marker='o')
      plt.title('losses')
      plt.legend()
+     plt.yscale('log')
      fname = loss_path.replace('.npz', '_compare.png')
      print("saving loss image: {}".format(fname))
      plt.savefig('compare.png')
