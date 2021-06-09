@@ -96,7 +96,7 @@ def to_np(t):
         return t.cpu().detach().numpy()
 
 class EnvStackRobosuite():
-    def __init__(self, env, k):
+    def __init__(self, env, k, skip_state_keys=[]):
         self.env = env
         self.k = k
         self._body = deque([], maxlen=k)
@@ -106,21 +106,24 @@ class EnvStackRobosuite():
         self.control_max = self.env.action_spec[1].max()
         self.control_shape = self.env.action_spec[0].shape[0]
         total_size = 0
-        self.obs_keys = list(self.env.observation_spec().keys())
+        self.skip_state_keys = skip_state_keys
+        self.obs_keys = [o for o in list(self.env.observation_spec().keys()) if o not in self.skip_state_keys]
+
         self.obs_sizes = {}
         self.obs_specs = {}
         for i, j in  self.env.observation_spec().items():
-            if type(j) in [int, np.bool]: s = 1
-            else:
-                l = len(j.shape)
-                if l == 0: s = 1
-                elif l == 1: s = j.shape[0]
-                elif l == 2: s = (j.shape[0]*j.shape[1])
+            if i in self.obs_keys:
+                if type(j) in [int, np.bool]: s = 1
                 else:
-                     print("write code to handle this shape",j.shape); sys.exit()
-            total_size +=s
-            self.obs_sizes[i] = s
-            self.obs_specs[i] = j
+                    l = len(j.shape)
+                    if l == 0: s = 1
+                    elif l == 1: s = j.shape[0]
+                    elif l == 2: s = (j.shape[0]*j.shape[1])
+                    else:
+                         print("write code to handle this shape",j.shape); sys.exit()
+                total_size +=s
+                self.obs_sizes[i] = s
+                self.obs_specs[i] = j
         self.observation_space = spaces.Box(-np.inf, np.inf, (total_size*k, ))
 
     def make_obs(self, obs):
@@ -160,7 +163,7 @@ class EnvStackRobosuite():
 
 class EnvStack():
     """ stack for dm_control """
-    def __init__(self, env, k):
+    def __init__(self, env, k=1, skip_state_keys=[]):
         self.env = env
         self.k = k
         self._body = deque([], maxlen=k)
@@ -172,14 +175,16 @@ class EnvStack():
         
         self.action_space = spaces.Box(self.control_min, self.control_max, self.control_shape)
         total_size = 0
-        self.obs_keys = list(self.env.observation_spec().keys())
+        self.skip_state_keys = skip_state_keys
+        self.obs_keys = [o for o in list(self.env.observation_spec().keys()) if o not in self.skip_state_keys]
         for i, j in  self.env.observation_spec().items():
-            l = len(j.shape)
-            if l == 0: total_size +=1
-            elif l == 1: total_size +=j.shape[0]
-            elif l == 2: total_size +=(j.shape[0]*j.shape[1])
-            else:
-                 print("write code to handle this shape",j.shape); sys.exit()
+            if i in self.obs_keys:
+                l = len(j.shape)
+                if l == 0: total_size +=1
+                elif l == 1: total_size +=j.shape[0]
+                elif l == 2: total_size +=(j.shape[0]*j.shape[1])
+                else:
+                     print("write code to handle this shape",j.shape); sys.exit()
           
         self.observation_space = spaces.Box(-np.inf, np.inf, (total_size*k, ))
 

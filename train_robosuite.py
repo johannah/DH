@@ -22,12 +22,21 @@ import pickle
 import TD3
 from dh_utils import seed_everything, normalize_joints
 from dh_utils import robotDH, quaternion_matrix, quaternion_from_matrix, robot_attributes
+from robosuite.utils.transform_utils import mat2quat
 import robosuite.utils.macros as macros
 macros.IMAGE_CONVENTION = 'opencv'
 torch.set_num_threads(4)
 
-def build(cfg):
+"""
+eef_rot_offset? 
+https://github.com/ARISE-Initiative/robosuite/blob/fc3738ca6361db73376e4c9d8a09b0571167bb2d/robosuite/models/robots/manipulators/manipulator_model.py
+https://github.com/ARISE-Initiative/robosuite/blob/65d3b9ad28d6e7a006e9eef7c5a0330816483be4/robosuite/environments/manipulation/single_arm_env.py#L41
+"""
+def build(cfg, k, skip_state_keys):
     controller_configs = suite.load_controller_config(default_controller=cfg['controller'])
+    if cfg['controller'] == 'JOINT_POSITION':
+        controller_configs['kp'] = 150
+    
     env = EnvStackRobosuite(suite.make(env_name=cfg['env_name'], 
                      robots=cfg['robots'], 
                      controller_configs=controller_configs,
@@ -40,16 +49,19 @@ def build(cfg):
                      ignore_done=False, 
                      hard_reset=False, 
                      reward_scale=1.0,
-                       ), k=cfg['frame_stack'])
+                     has_offscreen_renderer=True,
+                     has_renderer=False,
+                       ), k=k, skip_state_keys=skip_state_keys)
     
     return env
 
-def make_model(cfg, env, replay_buffer_size, cam_dim=(0,0,0)):
+
+def make_model(policy_name, env):
     state_dim = env.observation_space.shape[0]
     action_dim = env.control_shape
     max_action = env.control_max
     min_action = env.control_min
-    if cfg['policy_name'] == 'TD3':
+    if policy_name == 'TD3':
         kwargs = {'tau':0.005, 
                 'action_dim':action_dim, 'state_dim':state_dim, 
                 'policy_noise':0.2, 'max_policy_action':1.0, 
@@ -57,12 +69,8 @@ def make_model(cfg, env, replay_buffer_size, cam_dim=(0,0,0)):
                 'discount':0.99, 'max_action':max_action, 'min_action':min_action}
         policy = TD3.TD3(**kwargs)
 
-    replay_buffer = ReplayBuffer(state_dim, action_dim, 
-                                 max_size=replay_buffer_size, 
-                                 cam_dim=cam_dim, 
-                                 seed=cfg['seed'])
- 
-    return policy, replay_buffer, kwargs
+
+    return policy, kwargs
 
 
 def run_train(env, model, replay_buffer, kwargs, savedir, exp_name, start_timesteps, save_every, num_steps=0, num_episodes=2000, use_frames=False, expl_noise=0.1, batch_size=128):
@@ -134,7 +142,6 @@ def make_savedir(cfg):
     return savedir
 
 def run_eval(env, policy, replay_buffer, kwargs, cfg, cam_dim, savebase):
-
     robot_name = cfg['robot']['robots'][0]
     num_steps = 0
     total_steps = replay_buffer.max_size-1
@@ -207,10 +214,10 @@ def run_eval(env, policy, replay_buffer, kwargs, cfg, cam_dim, savebase):
     norm_joint_positions = normalize_joints(deepcopy(joint_positions))
     next_norm_joint_positions = normalize_joints(deepcopy(next_joint_positions))
 
-    replay_buffer.norm_joint_positions = joint_positions
-    replay_buffer.joint_positions = norm_joint_positions
-    replay_buffer.next_norm_joint_positions = next_joint_positions
-    replay_buffer.next_joint_positions = next_norm_joint_positions
+    replay_buffer.joint_positions = joint_positions
+    replay_buffer.norm_joint_positions = norm_joint_positions
+    replay_buffer.next_joint_positions = next_joint_positions
+    replay_buffer.next_norm_joint_positions = next_norm_joint_positions
     replay_buffer.robot_name = robot_name
     replay_buffer.cfg = cfg
     pickle.dump(replay_buffer, open(savebase + '.pkl', 'wb'))
@@ -236,18 +243,26 @@ def run_eval(env, policy, replay_buffer, kwargs, cfg, cam_dim, savebase):
         #f_eef = np.array([np.dot(base_matrix, r_eef[x]) for x in range(n)])
         dh_pos = f_eef[:,:3,3] 
         dh_ori = np.array([quaternion_from_matrix(f_eef[x]) for x in range(n)])
+        dh_ori = np.array([mat2quat(f_eef[x]) for x in range(n)])
 
         f, ax = plt.subplots(3, figsize=(10,18))
+        xdiff = data['robot0_eef_pos'][:,0]-dh_pos[:,0]
+        ydiff = data['robot0_eef_pos'][:,1]-dh_pos[:,1]
+        zdiff = data['robot0_eef_pos'][:,2]-dh_pos[:,2]
+        print('max xyzdiff', np.abs(xdiff).max(), np.abs(ydiff).max(), np.abs(zdiff).max())
         ax[0].plot(data['robot0_eef_pos'][:,0], label='state')
         ax[0].plot(dh_pos[:,0], label='dh calc')
-        ax[0].set_title('pos x')
+        ax[0].plot(xdiff, label='diff')
+        ax[0].set_title('posx: max diff %.04f'%np.abs(xdiff).max())
+        ax[0].legend()
         ax[1].plot(data['robot0_eef_pos'][:,1])
         ax[1].plot(dh_pos[:,1])
-        ax[1].set_title('pos y')
+        ax[1].plot(ydiff)
+        ax[1].set_title('posy: max diff %.04f'%np.abs(ydiff).max())
         ax[2].plot(data['robot0_eef_pos'][:,2])
         ax[2].plot(dh_pos[:,2])
-        ax[2].set_title('pos z')
-        plt.legend()
+        ax[2].plot(zdiff)
+        ax[2].set_title('posz: max diff %.04f'%np.abs(zdiff).max())
         plt.savefig(savebase+'eef.png')
         """
          From Robosuite paper
@@ -261,19 +276,28 @@ def run_eval(env, policy, replay_buffer, kwargs, cfg, cam_dim, savebase):
         # TODO quaternion is still not right! the errors occur when i hit 1 or 0 - this must be a common thing
         # CHECK DH parameters?
         f, ax = plt.subplots(4, figsize=(10,18))
+        qxdiff = data['robot0_eef_quat'][:,0]-dh_ori[:,0]
+        qzdiff = data['robot0_eef_quat'][:,2]-dh_ori[:,2]
+        qydiff = data['robot0_eef_quat'][:,1]-dh_ori[:,1]
+        qwdiff = data['robot0_eef_quat'][:,3]-dh_ori[:,3]
+        print('max qxyzwdiff',np.abs(qxdiff).max(), np.abs(qydiff).max(), np.abs(qzdiff).max(), np.abs(qwdiff).max())
         ax[0].plot(data['robot0_eef_quat'][:,0], label='sqx')
         ax[0].plot(dh_ori[:,0], label='dhqx')
-        ax[0].set_title('qx')
+        ax[0].plot(qxdiff, label='diff')
+        ax[0].set_title('qx: max diff %.04f'%np.abs(qxdiff).max())
+        ax[0].legend()
         ax[1].plot(data['robot0_eef_quat'][:,1], label='sqy')
         ax[1].plot(dh_ori[:,1], label='dhqy')
-        ax[1].set_title('qy')
+        ax[1].plot(qydiff)
+        ax[1].set_title('qy: max diff %.04f'%np.abs(qydiff).max())
         ax[2].plot(data['robot0_eef_quat'][:,2], label='sqz')
         ax[2].plot(dh_ori[:,2], label='dhqz')
-        ax[2].set_title('qz')
-        ax[3].plot(data['robot0_eef_quat'][:,3], label='sqw')
-        ax[3].plot(dh_ori[:,3], label='dhqw')
-        ax[3].set_title('qw')
-        plt.legend()
+        ax[2].plot(qzdiff)
+        ax[2].set_title('qz: max diff %.04f'%np.abs(qzdiff).max())
+        ax[3].plot(data['robot0_eef_quat'][:,3])
+        ax[3].plot(dh_ori[:,3])
+        ax[3].plot(qwdiff)
+        ax[3].set_title('qw: max diff %.04f'%np.abs(qwdiff).max())
         plt.savefig(savebase+'quat.png')
     return rewards, replay_buffer
  
@@ -294,7 +318,7 @@ def rollout():
     print('loading cfg: %s'%cfg_path)
     cfg = json.load(open(cfg_path))
     print(cfg)
-    env = build(cfg['robot'])
+    env = build(cfg['robot'], cfg['robot']['frame_stack'], skip_state_keys=skip_state_keys)
     if 'eval_seed' in cfg['experiment'].keys():
         eval_seed = cfg['experiment']['eval_seed'] + 1000
     else:
@@ -309,7 +333,12 @@ def rollout():
         eval_replay_buffer_size =  cfg['robot']['horizon']*args.num_eval_episodes
     print('running eval for %s steps'%eval_replay_buffer_size)
  
-    policy, replay_buffer, kwargs = make_model(cfg['experiment'], env, eval_replay_buffer_size, cam_dim=cam_dim)
+    policy,  kwargs = make_model(cfg['experiment']['policy_name'], env)
+    replay_buffer = ReplayBuffer(kwargs['state_dim'], kwargs['action_dim'], 
+                                 max_size=eval_replay_buffer_size, 
+                                 cam_dim=cam_dim, 
+                                 seed=eval_seed)
+ 
     savebase = load_model.replace('.pt','_eval_%06d_S%06d'%(eval_replay_buffer_size, eval_seed))
     replay_file = savebase+'.pkl' 
     movie_file = savebase+'_%s.mp4' %args.camera
@@ -329,8 +358,10 @@ if __name__ == '__main__':
     parser.add_argument('--frames', action='store_true', default=False)
     parser.add_argument('--camera', default='agentview', choices=['frontview', 'sideview', 'birdview', 'agentview'])
     parser.add_argument('--load', default='')
-    parser.add_argument('--num_eval_episodes', default=10, type=int)
+    parser.add_argument('--num_eval_episodes', default=30, type=int)
     args = parser.parse_args()
+    # keys that are robot specific
+    skip_state_keys = []
     
     if args.eval:
         rollout()
@@ -339,8 +370,13 @@ if __name__ == '__main__':
         print(cfg)
         seed_everything(cfg['experiment']['seed'])
         random_state = np.random.RandomState(cfg['experiment']['seed'])
-        env = build(cfg['robot'])
+        env = build(cfg['robot'], cfg['robot']['frame_stack'], skip_state_keys=skip_state_keys)
         savedir = make_savedir(cfg)
-        policy, replay_buffer, kwargs = make_model(cfg['experiment'], env, cfg['experiment']['replay_buffer_size'])
+        policy, kwargs = make_model(cfg['experiment']['policy_name'], env)
+        replay_buffer = ReplayBuffer(kwargs['state_dim'], kwargs['action_dim'], 
+                                 max_size=cfg['experiment']['replay_buffer_size'], 
+                                 cam_dim=(0,0,0), 
+                                 seed=cfg['experiment']['seed'])
+ 
         run_train(env, policy, replay_buffer, kwargs, savedir, cfg['experiment']['exp_name'], cfg['experiment']['start_training'], cfg['experiment']['eval_freq'], num_steps=0, num_episodes=2000, expl_noise=cfg['experiment']['expl_noise'], batch_size=cfg['experiment']['batch_size'])
 

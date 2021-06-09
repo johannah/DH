@@ -321,7 +321,7 @@ def create_results_dir(exp_name, results_dir='results'):
     today = date.today()
     today_str = today.strftime("%y-%m-%d")
     exp_cnt = 0
-    savebase = os.path.join('results', '%s_%s_%02d'%(today_str, exp_name, exp_cnt))
+    savebase = os.path.join(results_dir, '%s_%s_%02d'%(today_str, exp_name, exp_cnt))
     while len(glob(os.path.join(savebase, '*.pt'))):
          exp_cnt += 1
          savebase = os.path.join(results_dir, '%s_%s_%02d'%(today_str, exp_name, exp_cnt))
