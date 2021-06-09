@@ -10,7 +10,7 @@ def compress_frame(frame):
     return zlib.compress(frame.tostring())
 
 class ReplayBuffer(object):
-    def __init__(self, state_dim, action_dim, max_size=int(1e6), cam_dim=[0], seed=1939, garbage_check_multiplier=1.0):
+    def __init__(self, state_dim, body_dim,  action_dim, max_size=int(1e6), cam_dim=[0], seed=1939, garbage_check_multiplier=1.0):
         self.random_state = np.random.RandomState(seed)
         self.max_size = max_size
         self.ptr = 0
@@ -21,7 +21,9 @@ class ReplayBuffer(object):
         self.episode_start_times = [time.time()]
         self.episode_rewards = []
         self.states = np.zeros((self.max_size,state_dim), dtype=np.float32)
+        self.bodies = np.zeros((self.max_size,body_dim), dtype=np.float32)
         self.next_states = np.zeros((self.max_size,state_dim), dtype=np.float32)
+        self.next_bodies = np.zeros((self.max_size,body_dim), dtype=np.float32)
         self.actions = np.zeros((max_size, action_dim), np.float32)
         self.rewards = np.zeros((max_size, 1), np.float32)
         self.not_dones = np.zeros((max_size, 1), dtype=np.int32)
@@ -42,6 +44,8 @@ class ReplayBuffer(object):
         """ shrink size of replay to exactly fit data. useful when saving evaluation buffers"""
         self.states[:self.size]
         self.next_states[:self.size]
+        self.bodies[:self.size]
+        self.next_bodies[:self.size]
         self.actions[:self.size]
         self.rewards[:self.size]
         self.not_dones[:self.size]
@@ -56,9 +60,11 @@ class ReplayBuffer(object):
     def undo_frame_compression(self, z):
         return np.frombuffer(zlib.decompress(z), dtype=np.uint8).reshape(self.cam_dim)
 
-    def add(self, state, action, reward, next_state, done, frame_compressed=None, next_frame_compressed=None):
+    def add(self, state, body, action, reward, next_state, next_body, done, frame_compressed=None, next_frame_compressed=None):
         self.states[self.ptr] = state
+        self.bodies[self.ptr] = body
         self.next_states[self.ptr] = next_state
+        self.next_bodies[self.ptr] = next_body
         self.actions[self.ptr] = action
         self.rewards[self.ptr] = reward
         self.not_dones[self.ptr] = 1. - done
@@ -91,7 +97,6 @@ class ReplayBuffer(object):
         assert num_steps_back>0
         if self.num_steps_available() < num_steps_back:
             return self.get_last_steps(self.num_steps_available())
-         # can wrap around or dont need to wrap around
         indexes = np.arange(self.ptr-num_steps_back, self.ptr)
         return self.get_indexes(indexes)
 
@@ -99,12 +104,12 @@ class ReplayBuffer(object):
         if self.frames_enabled:
             _frames = np.array([self.undo_frame_compression(self.frames[x]) for x in batch_indexes])
             _next_frames = np.array([self.undo_frame_compression(self.next_frames[x]) for x in batch_indexes])
-            return self.states[batch_indexes], self.actions[batch_indexes], self.rewards[batch_indexes], self.next_states[batch_indexes], self.not_dones[batch_indexes], _frames, _next_frames
+            return self.states[batch_indexes], self.bodies[batch_indexes], self.actions[batch_indexes], self.rewards[batch_indexes], self.next_states[batch_indexes], self.next_bodies[batch_indexes], self.not_dones[batch_indexes], _frames, _next_frames
         else:
             if self.fake_frames.shape[0] != len(batch_indexes):
                 self.fake_dim[0] = len(batch_indexes)
                 self.fake_frames = np.zeros(self.fake_dim, np.uint8)
-            return self.states[batch_indexes], self.actions[batch_indexes], self.rewards[batch_indexes], self.next_states[batch_indexes], self.not_dones[batch_indexes], self.fake_frames, self.fake_frames
+            return self.states[batch_indexes], self.bodies[batch_indexes], self.actions[batch_indexes], self.rewards[batch_indexes], self.next_states[batch_indexes], self.next_bodies[batch_indexes], self.not_dones[batch_indexes], self.fake_frames, self.fake_frames
 
     def sample(self, batch_size, return_indexes=False):
         use_indexes = self.random_state.randint(0,self.num_steps_available(),batch_size)

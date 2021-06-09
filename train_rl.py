@@ -192,7 +192,7 @@ def rollout():
  
     else:
         replay_buffer = pickle.load(open(replay_file, 'rb'))
-    plot_replay(replay_buffer, savebase, frames=arg.frames)
+    plot_replay(replay_buffer, savebase, frames=args.frames)
 
    
 if __name__ == '__main__':

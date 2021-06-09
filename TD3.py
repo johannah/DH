@@ -107,7 +107,7 @@ class TD3(object):
         self.step = step
         self.total_it += 1
         # Sample replay buffer
-        state, action, reward, next_state, not_done, _, _ = replay_buffer.sample(batch_size)
+        state, _, action, reward, next_state, _, not_done, _, _ = replay_buffer.sample(batch_size)
         state = torch.FloatTensor(state).to(self.device)
         action = torch.FloatTensor(action).to(self.device)
         reward = torch.FloatTensor(reward).to(self.device)

@@ -37,7 +37,7 @@ import gym.spaces as spaces
 
 def run_eval(num_train_steps, num_eval_episodes=10):
     for ep in range(num_eval_episodes):
-        state,body = env.reset()
+        state = env.reset()
         if use_frames:
             frame_compressed = compress_frame(env.physics.render(height=h, width=w))
         e_step = 0
@@ -49,14 +49,14 @@ def run_eval(num_train_steps, num_eval_episodes=10):
                     policy.select_action(state)
                 ).clip(-kwargs['max_action'], kwargs['max_action'])
      
-            next_state, next_body, reward, done, info = env.step(action) # take a random action
+            next_state, reward, done, info = env.step(action) # take a random action
             e_step += 1
             if e_step == 100:
                 done = True
             if use_frames:
                 next_frame_compressed = compress_frame(env.physics.render(height=h, width=w))
      
-                eval_replay_buffer.add(state, body, action, reward, next_state, next_body, int(done), 
+                eval_replay_buffer.add(state, action, reward, next_state, int(done), 
                               frame_compressed=frame_compressed, 
                               next_frame_compressed=next_frame_compressed)
                 frame_compressed = next_frame_compressed
@@ -72,7 +72,7 @@ def run_train(num_steps=0, num_episodes=1000):
     for ep in range(num_episodes):
         #ts, reward, d, o = env.reset()
         done = False
-        state, body =  env.reset()
+        state =  env.reset()
         if use_frames:
             frame_compressed = compress_frame(env.physics.render(height=h, width=w))
         e_step = 0
@@ -88,7 +88,7 @@ def run_train(num_steps=0, num_episodes=1000):
     
      
  
-            next_state, next_body, reward, done, info = env.step(action) # take a random action
+            next_state, reward, done, info = env.step(action) # take a random action
             #ts, reward, _, next_o = env.step(action) # take a random action
             #next_state = format_observation(next_o)
             #angles = torch.FloatTensor(o['position']).to(device)
@@ -107,7 +107,6 @@ def run_train(num_steps=0, num_episodes=1000):
                 replay_buffer.add(state, action, reward, next_state, done)
      
             state = next_state
-            body = next_body
             num_steps+=1
             if num_steps > start_timesteps:
                 policy.train(num_steps, replay_buffer, batch_size)
