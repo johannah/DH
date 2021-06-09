@@ -157,9 +157,6 @@ class robotDH():
         for _a in range(fs):        
             _T1 = self.np_dh_transform(_a, angles[:,_a])
             _T = np.matmul(_T, _T1)
-        #ee_pred[:,:3] = ee_pred[:,:3] + _T[:, :3, 3] # position
-        #ee_pred[:,3:] = [quaternion_from_matrix(_T[x]) for x in range(ts)] # quaternion
-        #ee_pred[:,3:] = [mat2quat(_T[x]) for x in range(ts)] # quaternion
         return _T
 
     def torch_angle2ee(self, base_matrix, angles):
@@ -174,23 +171,6 @@ class robotDH():
             _T1 = self.torch_dh_transform(_a, angles[:,_a])
             _T = torch.matmul(_T, _T1)
         return _T
-
-
-    def batch_angle2ee_reacher(self, angles):
-        """ 
-            convert joint angle to end effector for reacher for ts,bs,f
-        """
-        # ts, bs, feat
-        ts, bs, fs = angles.shape
-        ee_pred = torch.zeros((ts,bs,2)).to(self.device)
-        # TODO join the time/batch so i don't have to loop this
-        # TODO this transform is pretty dependent on the 7 features in jaco
-        for b in range(bs):
-            T0 = self.torch_dh_transform(0, angles[:,b,0])
-            T1 = self.torch_dh_transform(1, angles[:,b,1])
-            T = torch.matmul(T0, T1)
-            ee_pred[:,b] = ee_pred[:,b] + T[:,:2,3]
-        return ee_pred
 
     def np_dh_transform(self, dh_index, angles):
         theta = self.npdh['DH_theta_sign'][dh_index]*angles+self.npdh['DH_theta_offset'][dh_index]

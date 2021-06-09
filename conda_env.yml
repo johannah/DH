@@ -11,14 +11,13 @@ dependencies:
   - jupyterlab
   - scikit-image
   - pip:
-    - termcolor
+    - IPython
     - git+git://github.com/deepmind/dm_control.git
-    - git+git://github.com/denisyarats/dmc2gym.git
+    - git+git://https://github.com/ARISE-Initiative/robosuite.git
     - tb-nightly
     - imageio
     - imageio-ffmpeg
     - git+git://github.com/facebookresearch/hydra@0.11_branch
-    - pandas
     - ipdb
     - tqdm
     - torchvision
