@@ -78,7 +78,6 @@ class TD3(object):
         **kwargs
     ):
 
-        self.step = 0
         self.device = device
         self.max_policy_action = max_policy_action
         self.discount = discount
@@ -97,7 +96,6 @@ class TD3(object):
         self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=3e-4)
 
         self.total_it = 0
-        self.loss_dict = {'actor':[], 'critic':[], 'critic_step':[], 'actor_step':[]}
 
 
     def select_action(self, state):
@@ -109,7 +107,7 @@ class TD3(object):
         self.step = step
         self.total_it += 1
         # Sample replay buffer
-        state, action, reward, next_state, not_done, _, _ = replay_buffer.sample(batch_size)
+        state, _, action, reward, next_state, _, not_done, _, _ = replay_buffer.sample(batch_size)
         state = torch.FloatTensor(state).to(self.device)
         action = torch.FloatTensor(action).to(self.device)
         reward = torch.FloatTensor(reward).to(self.device)
@@ -137,8 +135,6 @@ class TD3(object):
 
         # Compute critic loss
         critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(current_Q2, target_Q)
-        self.loss_dict['critic'].append(critic_loss.item())
-        self.loss_dict['critic_step'].append(step)
 
         # Optimize the critic
         self.critic_optimizer.zero_grad()
@@ -151,8 +147,6 @@ class TD3(object):
 
             # Compute actor losse
             actor_loss = -self.critic.Q1(state, self.actor(state)).mean()
-            self.loss_dict['actor'].append(actor_loss.item())
-            self.loss_dict['actor_step'].append(step)
             # Optimize the actor
             self.actor_optimizer.zero_grad()
             actor_loss.backward()
@@ -164,6 +158,7 @@ class TD3(object):
 
             for param, target_param in zip(self.actor.parameters(), self.actor_target.parameters()):
                 target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
+        return critic_loss, actor_loss
 
 
     def save(self, filepath):
@@ -171,14 +166,9 @@ class TD3(object):
                       'actor':self.actor.state_dict(), 
                       'critic_optimizer':self.critic_optimizer.state_dict(), 
                       'actor_optimizer':self.actor_optimizer.state_dict(),
-                      'loss_dict':self.loss_dict, 
                       'total_it':self.total_it}
         torch.save(model_dict, filepath)
 
-    def get_loss_plot_data(self):
-        plot_dict =  {'critic':(self.loss_dict['critic_step'], self.loss_dict['critic']), 
-                'actor':(self.loss_dict['actor_step'], self.loss_dict['actor'])}
-        return plot_dict
 
     def load(self, filepath):
         print("TD3 loading {}".format(filepath))
@@ -188,13 +178,3 @@ class TD3(object):
         self.critic_optimizer.load_state_dict(model_dict['critic_optimizer'])
         self.actor_optimizer.load_state_dict(model_dict['actor_optimizer'])
         self.total_it = model_dict['total_it']
-        try:
-            self.loss_dict = model_dict['loss_dict']
-        except:
-            self.loss_dict = {'actor':[0], 'critic':[0], 'critic_step':[0], 'actor_step':[0]}
-
-        # TODO this is wrong
-        if len(self.loss_dict['critic_step']):
-            self.step = self.loss_dict['critic_step'][-1]
-        else:
-            self.step = 0
