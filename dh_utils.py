@@ -78,7 +78,6 @@ def np_dh_transform(theta, d, a, alpha):
 
 
 def torch_dh_transform(theta, d, a, alpha, device):
-    # TODO check this - it had a bug
     bs = theta.shape[0]
     T = torch.zeros((bs,4,4), device=device)
     T[:,0,0] = T[:,0,0] +  torch.cos(theta)
