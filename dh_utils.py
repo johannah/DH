@@ -59,7 +59,6 @@ def quaternion_from_matrix(matrix):
     return q
 
 def np_dh_transform(theta, d, a, alpha):
-    # TODO check this - it had a bug
     bs = theta.shape[0]
     T = np.zeros((bs,4,4))
     T[:,0,0] = T[:,0,0] +  np.cos(theta)
