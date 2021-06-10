@@ -340,7 +340,11 @@ def plot_replay(replay_buffer, savebase, frames=False):
 #            data[key] = replay_buffer.states[:, idx:idx+o_size]
 #            idx += o_size
 #
-    rdh = robotDH(replay_buffer.cfg['robot']['robots'][0])
+    if 'robot_dh' in replay_buffer.cfg['robot'].keys():
+        robot_name = replay_buffer.cfg['robot']['robot_dh']
+    else:
+        robot_name = replay_buffer.cfg['robot']['robots'][0]
+    rdh = robotDH(robot_name)
     bm = replay_buffer.base_matrix
     f_eef = rdh.np_angle2ee(bm, joint_positions)
     # do the rotation in the beginning rather than end

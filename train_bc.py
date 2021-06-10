@@ -341,9 +341,14 @@ if __name__ == '__main__':
     cfg['experiment']['target_robot_name'] = args.target_robot_name
     cfg['experiment']['bc_seed'] = cfg['experiment']['seed'] + random_state.randint(10000)
     cfg['robot']['controller'] = "JOINT_POSITION" 
+
     if args.target_robot_name == '':
         args.target_robot_name = cfg['robot']['robots'][0]
-    print('setting target robot', args.target_robot_name)
+        if 'robot_dh' in cfg['robot'].keys():
+            args.target_robot_name = cfg['robot']['robot_dh']
+        else:
+            args.target_robot_name = cfg['robot']['robots'][0]
+    print('target robot', args.target_robot_name)
     cfg['robot']['robots'] = [args.target_robot_name] 
 
      
@@ -357,6 +362,7 @@ if __name__ == '__main__':
     save_every_epochs = 100
 
     # TODO 
+
     robot_dh = robotDH(robot_name=args.target_robot_name, device=device)
 
     data = load_data()

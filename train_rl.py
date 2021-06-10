@@ -138,12 +138,12 @@ def run_eval(env, policy, replay_buffer, kwargs, cfg, cam_dim, savebase):
                 frame_compressed = next_frame_compressed
             else:
                 replay_buffer.add(state, body, action, reward, next_state, next_body, done)
-            torques.append(env.env.robots[0].torques)
+            #torques.append(env.env.robots[0].torques)
             state = next_state
             body = next_body
             num_steps+=1
         rewards.append(ep_reward)
-    replay_buffer.torques = torques
+    #replay_buffer.torques = torques
     return rewards, replay_buffer
 
 def rollout():
