@@ -38,7 +38,7 @@ DH_attributes_Panda = {
            }
 
 
-Sawyer_DH_lengths = {'D1':0.237, 'D2':0.1925, 
+Sawyer_DH_lengths = {'DB':0.08, 'D1':0.237, 'D2':0.1925, 
                'D3':0.4, 'D4':0.1685,
                'D5':0.4, 'D6':0.1363, 
                'D7':0.11, 'e1':0.081}
@@ -49,7 +49,8 @@ DH_attributes_Sawyer = {
            'DH_alpha':[0, -np.pi/2.0, -np.pi/2.0, -np.pi/2.0, np.pi/2.0, np.pi/2.0, -np.pi/2.0, 0],
            'DH_theta_sign':[1, 1, 1, 1, 1, 1, 1, 0],
            'DH_theta_offset':[0.0 ,0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-           'DH_d':(Sawyer_DH_lengths['D1'], 
+           'DH_d':(Sawyer_DH_lengths['DB'],
+                   Sawyer_DH_lengths['D1'], 
                    Sawyer_DH_lengths['D2'],
                    Sawyer_DH_lengths['D3'], 
                    Sawyer_DH_lengths['D4'],
