@@ -94,14 +94,14 @@ DH_attributes_dm_reacher = {
      'DH_d':[0,0]}
 
 DH_attributes_dm_reacher_long_wrist = {
-     'DH_a':[0.12,0.22], # arm is .12, hand is .1 + .01 sphere finger
+     'DH_a':[0.12,0.22], 
      'DH_alpha':[0.0,0.0],
      'DH_theta_sign':[1.0,1.0], 
      'DH_theta_offset':[0,0],
      'DH_d':[0,0]}
 
 DH_attributes_dm_reacher_double = {
-     'DH_a':[0.22,0.22], # arm is .12, hand is .1 + .01 sphere finger
+     'DH_a':[0.22,0.22], 
      'DH_alpha':[0.0,0.0],
      'DH_theta_sign':[1.0,1.0], 
      'DH_theta_offset':[0,0],
