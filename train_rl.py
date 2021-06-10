@@ -20,7 +20,7 @@ import robosuite.utils.macros as macros
 torch.set_num_threads(3)
 import TD3
 
-from dh_utils import seed_everything, normalize_joints
+from dh_utils import seed_everything, normalize_joints, skip_state_keys
 from utils import build_replay_buffer, build_env, build_model, plot_replay
 from IPython import embed
 
@@ -108,6 +108,7 @@ def run_eval(env, policy, replay_buffer, kwargs, cfg, cam_dim, savebase):
         print('recording camera: %s'%args.camera)
 
     h, w, c = cam_dim
+    torques = []
     rewards = []
     while num_steps < total_steps:
         #ts, reward, d, o = env.reset()
@@ -137,10 +138,12 @@ def run_eval(env, policy, replay_buffer, kwargs, cfg, cam_dim, savebase):
                 frame_compressed = next_frame_compressed
             else:
                 replay_buffer.add(state, body, action, reward, next_state, next_body, done)
+            torques.append(env.env.robots[0].torques)
             state = next_state
             body = next_body
             num_steps+=1
         rewards.append(ep_reward)
+    replay_buffer.torques = torques
     return rewards, replay_buffer
 
 def rollout():
@@ -199,7 +202,7 @@ if __name__ == '__main__':
     import argparse
     from glob import glob
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', default='robo_config/base.cfg')
+    parser.add_argument('--cfg', default='experiments/base_robosuite.cfg')
     parser.add_argument('--eval', action='store_true', default=False)
     parser.add_argument('--frames', action='store_true', default=False)
     parser.add_argument('--camera', default='', choices=['default', 'frontview', 'sideview', 'birdview', 'agentview'])
@@ -207,7 +210,6 @@ if __name__ == '__main__':
     parser.add_argument('--num_eval_episodes', default=30, type=int)
     args = parser.parse_args()
     # keys that are robot specific
-    skip_state_keys = []
     
     if args.eval:
         rollout()

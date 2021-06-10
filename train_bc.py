@@ -23,7 +23,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from utils import build_env, build_model, build_replay_buffer, plot_replay
 from replay_buffer import compress_frame
-from dh_utils import find_latest_checkpoint, create_results_dir
+from dh_utils import find_latest_checkpoint, create_results_dir, skip_state_keys
 from dh_utils import robotDH, seed_everything, normalize_joints
 from dh_utils import load_robosuite_data, get_data_norm_params, quaternion_from_matrix, quaternion_matrix, robot_attributes
 
@@ -61,7 +61,7 @@ def forward_pass(input_data):
         y_pred[i] = y_pred[i] + output
     return y_pred
 
-def train(data, step=0, n_epochs=2000):
+def train(data, step=0, n_epochs=500000):
     # todo add running avg for loss
     train_loss = 0; valid_loss = 0
     for epoch in range(n_epochs):
@@ -189,7 +189,9 @@ def load_data():
         data['train']['gripper'] =  gripper[:,st_val:]
 
     data['base_matrix'] = replay.base_matrix 
-    print('actions', actions.max(), actions.min())
+    print('diffs')
+    print((next_jts-jts).min(0))
+    print((next_jts-jts).max(0))
     return data
 
 def setup_eval():
@@ -240,6 +242,9 @@ def run_BC_eval(env, replay_buffer, cfg, cam_dim, savebase):
 
     h, w, c = cam_dim
     rewards = []
+    
+    data_action_trace = data['train']['actions'][:,0]
+    data_grip_trace = data['train']['gripper'][:,0]
     with torch.no_grad():
         while num_steps < total_steps:
             #ts, reward, d, o = env.reset()
@@ -266,11 +271,14 @@ def run_BC_eval(env, replay_buffer, cfg, cam_dim, savebase):
                 base_x[e_step] = torch.FloatTensor(state)
                 output, h1_tm1, c1_tm1, h2_tm1, c2_tm1 = lstm(base_x[e_step], h1_tm1, c1_tm1, h2_tm1, c2_tm1)
                 pred_action = output[0].cpu().numpy()
+                pred_action = data_action_trace[e_step]
                 if cfg['experiment']['env_type'] == 'robosuite':
-                    fake_grip = np.ones(1)
+                    fake_grip = data_grip_trace[e_step]
                     action = np.hstack((pred_action, fake_grip))
                 else:
                     action = pred_action
+                env.sim.data.qpos[:len(pred_action)] = body[:-7]+pred_action
+                action = np.zeros_like(action)
                 next_state, next_body, reward, done, info = env.step(action) 
                 ep_reward += reward
                 if use_frames:
@@ -307,7 +315,6 @@ if __name__ == '__main__':
     seed_everything(seed)
     random_state = np.random.RandomState(seed)
     # some keys are robot-specifig!
-    skip_state_keys = ['robot0_joint_pos_cos', 'robot0_joint_pos_sin','robot0_joint_vel', 'robot0_proprio-state']
     # TODO log where data was trained 
 
     if args.load_model != '':
