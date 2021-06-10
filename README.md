@@ -1,4 +1,8 @@
-# train a new RL model:
+# Denavit–Hartenberg (DH) parameters for behavior cloning 
+
+Denavit-Hartenberg (DH) parameters are a set of four parameters which allow us to attach reference frames to links in a kinematic chain. We utilize this differentiable formulation for improving transfer in behavior cloning between robots with the same or different kinematic configurations. 
+
+## train a new RL model:
 
 `python train_rl.py --cfg experiments/base_dm.cfg`
 

@@ -18,6 +18,10 @@ from IPython import embed
 # epsilon for testing whether a number is close to zero
 _EPS = np.finfo(float).eps * 4.0
 
+# some keys are robot-specifig!
+skip_state_keys = ['robot0_joint_pos_cos', 'robot0_joint_pos_sin','robot0_joint_vel', 'robot0_proprio-state']
+
+
 def normalize_joints(angles):
     """
     This removes the wrapping from joint angles and ensures joint vals are bt -pi < vals < pi
