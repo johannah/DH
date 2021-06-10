@@ -24,7 +24,7 @@ from torch.utils.tensorboard import SummaryWriter
 from utils import build_env, build_model, build_replay_buffer, plot_replay
 from replay_buffer import compress_frame
 from dh_utils import find_latest_checkpoint, create_results_dir
-from dh_utils import robotDH, seed_everything, normalize_joints
+from dh_utils import robotDH, robotDHLearnable, seed_everything, normalize_joints
 from dh_utils import load_robosuite_data, get_data_norm_params, quaternion_from_matrix, quaternion_matrix, robot_attributes
 
 from IPython import embed 
@@ -75,6 +75,8 @@ def train(data, step=0, n_epochs=2000):
             bs = en-st
             while en <= n_samples and bs > 0:
                 opt.zero_grad()
+                if args.learn_dh:
+                    dh_opt.zero_grad()
                 x = torch.FloatTensor(data[phase]['states'][:,indexes[st:en]]).to(device)
                 pred_diff = torch.tanh(forward_pass(x))
                 #pred_diff = forward_pass(x)
@@ -92,9 +94,12 @@ def train(data, step=0, n_epochs=2000):
 
                 if phase == 'train':
                     clip_grad_norm(lstm.parameters(), grad_clip)
+                    # TODO: Do gradient checking for learning DH parameters
                     loss.backward()
                     step+=bs
                     opt.step()
+                    if args.learn_dh:
+                        dh_opt.step()
                     train_loss = loss
                 else:
                     valid_loss = loss
@@ -295,6 +300,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--load_replay')
     parser.add_argument('--target_robot_name', default='')
+    parser.add_argument('--learn_dh', action='store_true', default=False)
     parser.add_argument('--eval', default=False, action='store_true')
     parser.add_argument('--load_model', default='')
     parser.add_argument('--loss', default='DH', choices=['DH', 'angle'])
@@ -349,8 +355,11 @@ if __name__ == '__main__':
     batch_size = 32
     save_every_epochs = 100
 
-    # TODO 
-    robot_dh = robotDH(robot_name=args.target_robot_name, device=device)
+    # TODO
+    if args.learn_dh:
+        robot_dh = robotDHLearnable(robot_name=args.target_robot_name, device=device)
+    else:
+        robot_dh = robotDH(robot_name=args.target_robot_name, device=device)
 
     data = load_data()
     base_matrix = torch.FloatTensor((data['base_matrix'])).to(device)
@@ -388,7 +397,7 @@ if __name__ == '__main__':
         tb_writer = SummaryWriter(savebase)
         # use LBFGS as optimizer since we can load the whole data to train
         opt = optim.Adam(lstm.parameters(), lr=0.0001)
+        if args.learn_dh:
+            dh_opt = optim.Adam(robot_dh.parameters(), lr=0.0001)
+            print(f"Total number of DH parameters to learn: {sum(p.numel() for p in robot_dh.parameters())}")
         train(data, step, n_epochs=2000)
-
-
-   

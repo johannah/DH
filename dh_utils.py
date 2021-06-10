@@ -9,6 +9,7 @@ import math
 from datetime import datetime as date
 from glob import glob
 import torch
+import torch.nn as nn
 from robosuite.utils.transform_utils import mat2quat
 from dh_parameters import robot_attributes
 from IPython import embed
@@ -183,7 +184,43 @@ class robotDH():
         d = self.tdh['DH_d'][dh_index]
         a = self.tdh['DH_a'][dh_index]
         alpha = self.tdh['DH_alpha'][dh_index]
-        return torch_dh_transform(theta, d, a, alpha, self.device)     
+        return torch_dh_transform(theta, d, a, alpha, self.device)
+
+
+class robotDHLearnable(nn.Module):
+    def __init__(self, robot_name, device='cpu'):
+        super().__init__()
+        learnable_params = ['DH_a']
+        self.device = device
+        self.robot_name = robot_name
+        self.dh_true = robot_attributes[self.robot_name]
+        self.tdh = nn.ParameterDict({})
+        for key, item in self.dh_true.items():
+            if key in learnable_params:
+                self.tdh[key] = nn.Parameter(torch.randn(len(item)), requires_grad=True)
+            else:
+                self.tdh[key] = nn.Parameter(torch.FloatTensor(item), requires_grad=False)
+
+    def torch_angle2ee(self, base_matrix, angles):
+        """
+            convert joint angle to end effector for reacher for ts,bs,f
+        """
+        # ts, bs, feat
+        ts, fs = angles.shape
+        ee_pred = torch.zeros((ts,4,4)).to(self.device)
+        _T = base_matrix
+        for _a in range(fs):
+            _T1 = self.torch_dh_transform(_a, angles[:,_a])
+            _T = torch.matmul(_T, _T1)
+        return _T
+
+    def torch_dh_transform(self, dh_index, angles):
+        theta = self.tdh['DH_theta_sign'][dh_index] * angles + self.tdh['DH_theta_offset'][dh_index]
+        d = self.tdh['DH_d'][dh_index]
+        a = self.tdh['DH_a'][dh_index]
+        alpha = self.tdh['DH_alpha'][dh_index]
+        return torch_dh_transform(theta, d, a, alpha, self.device)
+
 
 # I"M NOT CONVINCED THESE WORK - 
 #def sincos2angle(sin_theta, cos_theta, use_numpy=False):
