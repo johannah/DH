@@ -18,13 +18,14 @@ _EPS = np.finfo(float).eps * 4.0
 Panda_DH_lengths = {'D1':0.333, 'D2':0, 
                'D3':0.316, 'D4':0,
                'D5':0.384, 'D6':0, 
-               'D7':0, 'DF':0.1065, 'e1':0.0825}
+               'D7':0, 'DF':0.1065, 
+               'e1':0.0825, 'e2':0.088}
 
  
 DH_attributes_Panda = {
-          'DH_a':[0, 0, Panda_DH_lengths['e1'], -Panda_DH_lengths['e1'], 0, 0, 0, 0],
-           'DH_alpha':[0, -np.pi/2.0, np.pi/2.0, np.pi/2.0, -np.pi/2.0, np.pi/2.0, np.pi/2.0,0],
-           'DH_theta_sign':[1, 1, 1, 1, 1, 1, 1],
+          'DH_a':[0, 0, 0, Panda_DH_lengths['e1'], -Panda_DH_lengths['e1'], 0, Panda_DH_lengths['e2'], 0],
+           'DH_alpha':[0, -np.pi/2.0, np.pi/2.0, np.pi/2.0, -np.pi/2.0, np.pi/2.0, np.pi/2.0, 0],
+           'DH_theta_sign':[1, 1, 1, 1, 1, 1, 1, 0],
            'DH_theta_offset':[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
            'DH_d':(Panda_DH_lengths['D1'], 
                    Panda_DH_lengths['D2'],
@@ -38,15 +39,15 @@ DH_attributes_Panda = {
 
 
 Sawyer_DH_lengths = {'D1':0.237, 'D2':0.1925, 
-               'D3':0.4, 'D4':-0.1685,
+               'D3':0.4, 'D4':0.1685,
                'D5':0.4, 'D6':0.1363, 
                'D7':0.11, 'e1':0.081}
 
  
 DH_attributes_Sawyer = {
-          'DH_a':[Sawyer_DH_lengths['e1'], 0, 0, 0, 0, 0, 0],
-           'DH_alpha':[-np.pi/2.0, -np.pi/2.0, -np.pi/2.0, -np.pi/2.0, -np.pi/2.0, -np.pi/2.0,0],
-           'DH_theta_sign':[1, 1, 1, 1, 1, 1, 1],
+          'DH_a':[0,Sawyer_DH_lengths['e1'], 0, 0, 0, 0, 0, 0],
+           'DH_alpha':[0, -np.pi/2.0, -np.pi/2.0, -np.pi/2.0, np.pi/2.0, np.pi/2.0, -np.pi/2.0, 0],
+           'DH_theta_sign':[1, 1, 1, 1, 1, 1, 1, 0],
            'DH_theta_offset':[np.pi,0.0, 0.0, 0.0, 0.0,0.0,np.pi/2.0],
            'DH_d':(Sawyer_DH_lengths['D1'], 
                    Sawyer_DH_lengths['D2'],
