@@ -113,7 +113,6 @@ def to_np(t):
     else:
         return t.cpu().detach().numpy()
 
-#class EnvStackRobosuite():
 class EnvStack():
     def __init__(self, env, k, skip_state_keys=[], env_type='robosuite', default_camera='', xpos_target='', bpos="root"):
         assert env_type in ['robosuite', 'dm_control']
