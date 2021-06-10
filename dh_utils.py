@@ -10,6 +10,7 @@ from datetime import datetime as date
 from glob import glob
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from robosuite.utils.transform_utils import mat2quat
 from dh_parameters import robot_attributes
 from IPython import embed
@@ -195,9 +196,11 @@ class robotDHLearnable(nn.Module):
         self.robot_name = robot_name
         self.dh_true = robot_attributes[self.robot_name]
         self.tdh = nn.ParameterDict({})
+        noise_std = 0.05
         for key, item in self.dh_true.items():
             if key in learnable_params:
-                self.tdh[key] = nn.Parameter(torch.randn(len(item)), requires_grad=True)
+                param_noise = torch.normal(torch.zeros(len(item)), noise_std * torch.ones(len(item)))
+                self.tdh[key] = nn.Parameter(torch.FloatTensor(item) + param_noise, requires_grad=True)
             else:
                 self.tdh[key] = nn.Parameter(torch.FloatTensor(item), requires_grad=False)
 
@@ -216,8 +219,8 @@ class robotDHLearnable(nn.Module):
 
     def torch_dh_transform(self, dh_index, angles):
         theta = self.tdh['DH_theta_sign'][dh_index] * angles + self.tdh['DH_theta_offset'][dh_index]
-        d = self.tdh['DH_d'][dh_index]
-        a = self.tdh['DH_a'][dh_index]
+        d = F.softplus(self.tdh['DH_d'][dh_index])
+        a = F.softplus(self.tdh['DH_a'][dh_index])
         alpha = self.tdh['DH_alpha'][dh_index]
         return torch_dh_transform(theta, d, a, alpha, self.device)
 

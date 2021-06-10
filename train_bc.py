@@ -94,7 +94,6 @@ def train(data, step=0, n_epochs=2000):
 
                 if phase == 'train':
                     clip_grad_norm(lstm.parameters(), grad_clip)
-                    # TODO: Do gradient checking for learning DH parameters
                     loss.backward()
                     step+=bs
                     opt.step()
@@ -398,6 +397,6 @@ if __name__ == '__main__':
         # use LBFGS as optimizer since we can load the whole data to train
         opt = optim.Adam(lstm.parameters(), lr=0.0001)
         if args.learn_dh:
-            dh_opt = optim.Adam(robot_dh.parameters(), lr=0.0001)
+            dh_opt = optim.Adam(robot_dh.parameters(), lr=0.001)
             print(f"Total number of DH parameters to learn: {sum(p.numel() for p in robot_dh.parameters())}")
         train(data, step, n_epochs=2000)
