@@ -15,27 +15,49 @@ from IPython import embed
 _EPS = np.finfo(float).eps * 4.0
 
 # Params for Denavit-Hartenberg Reference Frame Layout (DH)
-jaco27DOF_DH_lengths = {'D1':0.1564, 'D2':0.1284, 
+jaco27DOF_DH_lengths = {'D1':0.2755, 'D2':0.2050, 
+               'D3':0.2050, 'D4':0.2073,
+               'D5':0.1038, 'D6':0.1038, 
+               'D7':0.1600, 'e2':0.0098}
+
+DH_attributes_jaco27DOF = {
+          'DH_a':[0, 0, 0, 0, 0, 0, 0],
+           'DH_alpha':[np.pi/2.0, np.pi/2.0, np.pi/2.0, np.pi/2.0, np.pi/2.0, np.pi/2.0, np.pi],
+           'DH_theta_sign':[1, 1, 1, 1, 1, 1, 1],
+           'DH_theta_offset':[np.pi,0.0, 0.0, 0.0, 0.0,0.0,np.pi/2.0],
+           'DH_d':(-jaco27DOF_DH_lengths['D1'], 
+                    0, 
+                    -(jaco27DOF_DH_lengths['D2']+jaco27DOF_DH_lengths['D3']), 
+                    -jaco27DOF_DH_lengths['e2'], 
+                    -(jaco27DOF_DH_lengths['D4']+jaco27DOF_DH_lengths['D5']), 
+                    0, 
+                    -(jaco27DOF_DH_lengths['D6']+jaco27DOF_DH_lengths['D7']))
+            }
+
+
+
+Kinova3_DH_lengths = {'D1':0.1564, 'D2':0.1284, 
                'D3':0.2104, 'D4':0.2104,
                'D5':0.2084, 'D6':0.1059, 
                'D7':0.1059, 'DE':0.0615, 
                'e1':0.0054, 'e2':0.0064, 'e3':0.0064}
 
  
-DH_attributes_jaco27DOF = {
+DH_attributes_Kinova3 = {
           'DH_a':[0, 0, 0, 0, 0, 0, 0, 0],
            'DH_alpha':[np.pi, np.pi/2.0, np.pi/2.0, np.pi/2.0, np.pi/2.0, np.pi/2.0, np.pi/2.0, np.pi],
            'DH_theta_sign':[0, 1, 1, 1, 1, 1, 1, 1],
            'DH_theta_offset':[0, 0, np.pi, np.pi, np.pi, np.pi, np.pi, np.pi],
            'DH_d':(0,
-                   -(jaco27DOF_DH_lengths['D1']+jaco27DOF_DH_lengths['D2']), 
-                   -(jaco27DOF_DH_lengths['e1']+jaco27DOF_DH_lengths['e2']), 
-                   -(jaco27DOF_DH_lengths['D3']+jaco27DOF_DH_lengths['D4']),
-                   -(jaco27DOF_DH_lengths['e2']+jaco27DOF_DH_lengths['e3']), 
-                   -(jaco27DOF_DH_lengths['D5']+jaco27DOF_DH_lengths['D6']),
+                   -(Kinova3_DH_lengths['D1']+Kinova3_DH_lengths['D2']), 
+                   -(Kinova3_DH_lengths['e1']+Kinova3_DH_lengths['e2']), 
+                   -(Kinova3_DH_lengths['D3']+Kinova3_DH_lengths['D4']),
+                   -(Kinova3_DH_lengths['e2']+Kinova3_DH_lengths['e3']), 
+                   -(Kinova3_DH_lengths['D5']+Kinova3_DH_lengths['D6']),
                    0,
-                   -(jaco27DOF_DH_lengths['D7']+jaco27DOF_DH_lengths['DE']))
+                   -(Kinova3_DH_lengths['D7']+Kinova3_DH_lengths['DE']))
            }
+
 DH_attributes_dm_reacher = {
      'DH_a':[0.01,0.01],
      'DH_alpha':[0.0,0.0],
@@ -44,7 +66,7 @@ DH_attributes_dm_reacher = {
      'DH_d':[0,0]}
        
 robot_attributes = {'dm_reacher':DH_attributes_dm_reacher, 
-                    'Jaco':DH_attributes_jaco27DOF, 
+                    'Jaco':DH_attributes_Kinova3, 
                    }
 
 def normalize_joints(angles):
