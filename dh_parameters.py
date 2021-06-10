@@ -97,7 +97,6 @@ DH_attributes_dm_reacher = {
 
        
 robot_attributes = {'reacher':DH_attributes_dm_reacher, 
-                    'pendulum':DH_attributes_dm_pendulum, 
                     'Jaco':DH_attributes_jaco27DOF, 
                     'Baxter':DH_attributes_Baxter, 
                     'Sawyer':DH_attributes_Sawyer, 
