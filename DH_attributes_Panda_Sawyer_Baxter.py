@@ -48,7 +48,7 @@ DH_attributes_Sawyer = {
           'DH_a':[0,Sawyer_DH_lengths['e1'], 0, 0, 0, 0, 0, 0],
            'DH_alpha':[0, -np.pi/2.0, -np.pi/2.0, -np.pi/2.0, np.pi/2.0, np.pi/2.0, -np.pi/2.0, 0],
            'DH_theta_sign':[1, 1, 1, 1, 1, 1, 1, 0],
-           'DH_theta_offset':[np.pi,0.0, 0.0, 0.0, 0.0,0.0,np.pi/2.0],
+           'DH_theta_offset':[0.0 ,0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
            'DH_d':(Sawyer_DH_lengths['D1'], 
                    Sawyer_DH_lengths['D2'],
                    Sawyer_DH_lengths['D3'], 
