@@ -92,10 +92,11 @@ def train(data, step=0, n_epochs=500000):
 
                 if phase == 'train':
                     clip_grad_norm(lstm.parameters(), grad_clip)
-                    loss.backward()
-                    step+=bs
-                    opt.step()
                     train_loss = loss
+                    if st:
+                        loss.backward()
+                        opt.step()
+                        step+=bs
                 else:
                     valid_loss = loss
                 if not step % (bs*10):
