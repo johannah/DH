@@ -12,6 +12,10 @@ import json
 2) increase kp slowly until you get "overshoot", (positive ERR on first half of "diffs", negative ERR on second half of "diffs"
 3) increase damping ratio to squash the overshoot
 4) watch and make sure you aren't "railing" the torque values on the big diffs (30.5 for the first 4 joints on Jaco). If this is happening, you may need to decrease the step size (min_max)
+
+I want it to slightly undershoot the biggest joint_diff in 1 step in a tuned controller
+
+All others should have ~.000x error
 """
 
 def run_test():
