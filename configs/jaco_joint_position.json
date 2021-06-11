@@ -1,0 +1,15 @@
+{
+    "type": "JOINT_POSITION", 
+    "damping_ratio": [0.1, 0.6, 0.6, 0.0, 0.55, 0.55, 0.55],
+    "kp": [2500,30,30,40,25,25,25],
+    "input_max": 1,
+    "input_min": -1,
+    "output_max": 10,
+    "output_min": -10,
+    "impedence_mode": "fixed",
+    "interpolation": null,
+    "qpos_limits": null,
+    "kp_limits": [0, 1000],
+    "MIN_MAX_DIFF": [0.0004, 0.04, 0.06, 0.06, 0.08, 0.04, 0.04],
+    "CALIBRATION_NOTES": "found experimentally with DH/scripts/autotune_joints.py by Ziegler-Nichols method - JRH June 2021"
+}

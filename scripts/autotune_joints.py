@@ -4,28 +4,42 @@ import numpy as np
 from IPython import embed
 from imageio import mimwrite
 from copy import deepcopy
+import json
 
 robot_name = "Jaco"
-active_joint = 0
-#"kp":[30, 30, 30, 40, 100, 40, 40],
+active_joint = 3
 num_joints = 7
-controller_config = {
-       "type": "JOINT_POSITION", 
-       "input_max":1, 
-       "input_min":-1, 
-       "damping_ratio":[0.1,.6,.6,.55,.55,.55,.55],
-       "output_max":10,
-       "output_min":-10,
-       "kp":[2500,30,30,25,25,25,25],
-       "impedence_mode":"fixed", 
-       "interpolation":None, 
-       "kp_limits":(0, 1000),
-       }
+"""
+# JRH summary of Ziegler-Nichols method
+1) set damping_ratio and kp to zero
+2) increase kp slowly until you get "overshoot", (positive ERR on first half of "diffs", negative ERR on second half of "diffs"
+3) increase damping ratio to squash the overshoot
+4) watch and make sure you aren't "railing" the torque values on the big diffs (30.5 for the first 4 joints on Jaco). If this is happening, you may need to decrease the step size (min_max)
+"""
+#controller_config = {
+#       "type": "JOINT_POSITION", 
+#       "input_max":1, 
+#       "input_min":-1, 
+#       "damping_ratio":[0.1,.6,.6,.55,.55,.55,.55],
+#       "output_max":10,
+#       "output_min":-10,
+#       "kp":[2500,30,30,25,25,25,25],
+#       "impedence_mode":"fixed", 
+#       "interpolation":None, 
+#       "kp_limits":(0, 1000),
+#       }
+#
+#min_max = [.0004, .04, .06, .08, .08, .04, .04]
+controller_config = json.load(open('../configs/%s_joint_position.json'%robot_name.lower()))
+min_max = controller_config['MIN_MAX_DIFF']
+for k,j in controller_config.items():
+    print(k,j)
+print('TESTING: %s joint: %s with kp:%s d:%s'%(robot_name, active_joint, 
+                                                  controller_config['kp'][active_joint], 
+                                                  controller_config['damping_ratio'][active_joint]))
 
-min_max = [.0004, .04, .06, .08, .08, .04, .04]
 frames = []
 for diff in np.linspace(-min_max[active_joint], min_max[active_joint], 7):
-#for diff in [0.01]:
     env = robosuite.make("Door", robots=robot_name,
                          has_renderer=False,        
                          has_offscreen_renderer=True, 
@@ -38,7 +52,7 @@ for diff in np.linspace(-min_max[active_joint], min_max[active_joint], 7):
     action = np.zeros(num_joints+1)
     action[active_joint] = diff
  
-    for i in range(10):
+    for i in range(1):
         prev_pos = deepcopy(env.sim.data.qpos[active_robot._ref_joint_pos_indexes[active_joint]])
         env.step(action)
         frames.append(env.sim.render(camera_name="frontview", height=248, width=248)[::-1])
