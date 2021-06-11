@@ -249,9 +249,11 @@ class EnvStack():
 
 def build_env(cfg, k, skip_state_keys, env_type='robosuite', default_camera=''):
     if env_type == 'robosuite':
-        controller_configs = robosuite.load_controller_config(default_controller=cfg['controller'])
-        if cfg['controller'] == 'JOINT_POSITION':
-            controller_configs['kp'] = 150
+        if 'controller_config_file' in cfg.keys():
+            cfg_file = os.path.abspath(cfg['controller_config_file'])
+            controller_configs = robosuite.load_controller_config(cfg_file)
+        else:
+            controller_configs = robosuite.load_controller_config(default_controller=cfg['controller'])
         env = robosuite.make(env_name=cfg['env_name'], 
                          robots=cfg['robots'], 
                          controller_configs=controller_configs,

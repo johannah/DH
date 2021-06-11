@@ -193,6 +193,7 @@ def load_data():
     print('diffs')
     print((next_jts-jts).min(0))
     print((next_jts-jts).max(0))
+    embed()
     return data
 
 def setup_eval():
