@@ -71,7 +71,6 @@ if __name__ == '__main__':
     parser.add_argument('--robot_name', default='Jaco')
     parser.add_argument('--active_joint', default=3, type=int, help='joint to test')
     parser.add_argument('--config_file', default='', help='path to config file. if not configured, will default to ../confgis/robot_name_joint_position.json')
-    parser.add_argument('--num_action_steps', default=1, type=int)
     parser.add_argument('--num_rest_steps', default=3, type=int)
     parser.add_argument('--movie_file', default='joints.mp4')
     args = parser.parse_args() 
