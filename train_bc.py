@@ -45,10 +45,11 @@ class LSTM(nn.Module):
         output = self.linear(h2_t)
         return output, h1_t, c1_t, h2_t, c2_t
 
-def forward_pass(input_data):
+def forward_pass(x, phase='train'):
     #input_data = (input_data-train_mean)/train_std
-    input_noise = torch.normal(torch.zeros_like(input_data), noise_std*torch.ones_like(input_data))
-    x = input_data + input_noise
+    if phase == 'train':
+        input_noise = torch.normal(torch.zeros_like(x), noise_std*torch.ones_like(x))
+        x = x + input_noise
     bs = x.shape[1]
     ts = x.shape[0]
     h1_tm1 = torch.zeros((bs, hidden_size)).to(device)
@@ -61,7 +62,15 @@ def forward_pass(input_data):
         y_pred[i] = y_pred[i] + output
     return y_pred
 
-def train(data, step=0, n_epochs=500000):
+def mean_angle_btw_vectors(v1, v2, eps = 1e-8):
+    # https://towardsdatascience.com/better-rotation-representations-for-accurate-pose-estimation-e890a7e1317f
+    dot_product = torch.sum(v1*v2, axis=-1)
+    cos_a = dot_product / (torch.norm(v1, dim=-1) * torch.norm(v2, dim=-1))
+    cos_a = torch.clamp(cos_a, -1 + eps, 1 - eps)
+    angle_dist = torch.acos(cos_a) / np.pi * 180.0
+    return torch.mean(angle_dist)
+
+def train(data, step=0, n_epochs=1e7):
     # todo add running avg for loss
     train_loss = 0; valid_loss = 0
     for epoch in range(n_epochs):
@@ -75,37 +84,58 @@ def train(data, step=0, n_epochs=500000):
             bs = en-st
             while en <= n_samples and bs > 0:
                 opt.zero_grad()
-                x = torch.FloatTensor(data[phase]['states'][:,indexes[st:en]]).to(device)
-                pred_diff = torch.tanh(forward_pass(x))
-                #pred_diff = forward_pass(x)
-                ts,bs,f = pred_diff.shape 
-                if args.loss == 'DH':
-                    joints = torch.FloatTensor(data[phase]['joints'][:,indexes[st:en]]).to(device)
-                    pred_jt = pred_diff + joints
-                    target_pos = torch.FloatTensor(data[phase]['target_pos'][:,indexes[st:en]]).to(device)
-                    pred_rot_mat = robot_dh.torch_angle2ee(base_matrix, pred_jt.contiguous().view(ts*bs,f)).contiguous().view(ts,bs,4,4)
-                    pred_pos = pred_rot_mat[:,:,:3,3]
-                    loss = criterion(pred_pos, target_pos)
-                elif args.loss == 'angle':
-                    target_diff = torch.FloatTensor(data[phase]['actions'][:,indexes[st:en]]).to(device)
-                    loss = criterion(pred_diff, target_diff)
+                joints = torch.FloatTensor(data[phase]['joints'][:,indexes[st:en]]).to(device)
+                target_pos = torch.FloatTensor(data[phase]['target_pos'][:,indexes[st:en]]).to(device)
+                target_rot = torch.FloatTensor(data[phase]['target_rot'][:,indexes[st:en]]).to(device)
+                target_diff = torch.FloatTensor(data[phase]['actions'][:,indexes[st:en]]).to(device)
 
+                x = torch.FloatTensor(data[phase]['states'][:,indexes[st:en]]).to(device)
+                pred_diff = torch.tanh(forward_pass(x, phase))
+                ts,bs,f = pred_diff.shape 
+                pred_jt = pred_diff + joints
+                pred_rot_mat = robot_dh.torch_angle2ee(base_matrix, pred_jt.contiguous().view(ts*bs,f)).contiguous().view(ts,bs,4,4)
+                pred_pos = pred_rot_mat[:,:,:3,3]
+                pred_rot = pred_rot_mat[:,:,:3,:3]
+                if args.loss == 'DH':
+                    dh_pos_loss = criterion(pred_pos, target_pos)
+                    # TODO need relative rotation
+                    dh_rot_loss = mean_angle_btw_vectors(pred_rot.contiguous().view(ts*bs,3,3), 
+                                                         target_rot.contiguous().view(ts*bs,3,3))
+                    dh_loss = loss = dh_pos_loss + dh_rot_loss
+                    embed()
+                    with torch.no_grad():
+                        joint_loss = criterion(pred_diff.detach(), target_diff)
+                elif args.loss == 'angle':
+                    joint_loss = criterion(pred_diff, target_diff)
+                    loss = joint_loss
+                    with torch.no_grad():
+                        dh_pos_loss = criterion(pred_pos.detach(), target_pos.detach())
+                        dh_rot_loss = mean_angle_btw_vectors(pred_rot.detach().contiguous().view(ts*bs,3,3), 
+                                                             target_rot.detach().contiguous().view(ts*bs,3,3))
+                        dh_loss = dh_pos_loss + dh_rot_loss
                 if phase == 'train':
                     clip_grad_norm(lstm.parameters(), grad_clip)
                     train_loss = loss
                     if st:
                         loss.backward()
                         opt.step()
+                        if not step % (bs*10):
+                            tb_writer.add_scalars('BC_loss',{'dh_pos_%s'%(phase):dh_pos_loss, 
+                                                             'dh_rot_%s'%(phase):dh_rot_loss, 
+                                                             'dh_%s'%(phase):dh_loss, 
+                                                             'jt_%s'%(phase):joint_loss}, step)
                         step+=bs
                 else:
                     valid_loss = loss
-                if not step % (bs*10):
-                    tb_writer.add_scalars('BC_loss',{'%s_train'%(args.loss):train_loss, '%s_valid'%(args.loss):valid_loss}, step)
 
                 st = en
                 en = min([st+batch_size, n_samples+1])
                 bs = en-st
-            tb_writer.add_scalars('BC_loss',{'%s_train'%(args.loss):train_loss, '%s_valid'%(args.loss):valid_loss}, step)
+            tb_writer.add_scalars('BC_loss',{'dh_pos_%s'%(phase):dh_pos_loss, 
+                                                             'dh_rot_%s'%(phase):dh_rot_loss, 
+                                                             'dh_%s'%(phase):dh_loss, 
+                                                             'jt_%s'%(phase):joint_loss}, step)
+ 
             print('{} epoch:{} step:{} loss:{}'.format(phase, epoch, step, loss))
         if not epoch % save_every_epochs:
             model_dict = {'model':lstm.state_dict(), 'train_cnt':step}
@@ -126,8 +156,8 @@ def load_data():
     random_state.shuffle(starts)
  
     max_ts = int(replay.max_timesteps)
-    # bodies is joint_angles + eef_pose
-    j_size = replay.next_bodies.shape[1]-7
+    # bodies is joint_angles + world eef_pos + rotation in base
+    j_size = replay.next_bodies.shape[1]-19
     # action is joint_diff
     if cfg['experiment']['env_type'] == 'robosuite':
         gripper = np.zeros((max_ts, len(starts), 1)) 
@@ -136,7 +166,7 @@ def load_data():
     joints = np.zeros((max_ts, len(starts), j_size)) 
     target_joints = np.zeros((max_ts, len(starts), j_size)) 
     target_pos = np.zeros((max_ts, len(starts), 3)) 
-    target_quat = np.zeros((max_ts, len(starts), 4)) 
+    target_rot = np.zeros((max_ts, len(starts), 3, 3)) 
     n, ss = replay.states.shape
     k = replay.k
     idx = (k-1)*(ss//k) # start at most recent observation
@@ -147,10 +177,13 @@ def load_data():
     #_n_eef = replay.next_states[:,data_idx['robot0_eef_pos'][0]:data_idx['robot0_eef_pos'][1]]
     # get pos, and quat for 
     sts = replay.states
-    jts = replay.bodies[:,:-7]
-    next_jts = replay.next_bodies[:,:-7]
-    next_pos = replay.next_bodies[:,-7:-7+3]
-    next_quat = replay.next_bodies[:,-7+3:]
+    jts = replay.bodies[:,:-19]
+    next_jts = replay.next_bodies[:,:-19]
+    next_world_pos = replay.next_bodies[:,-19:-16]
+    n_ts = replay.next_bodies.shape[0]
+    next_mat = replay.next_bodies[:, -16:].reshape(n_ts, 4,4)
+    next_pos = next_mat[:,:3,3]
+    next_rot = next_mat[:,:3,:3]
     if cfg['experiment']['env_type'] == 'robosuite':
         grip = replay.actions[:,-1][:,None]
     #target_ee = robot_dh.angle2ee(torch.FloatTensor(target_joints).to(device)).cpu().numpy()
@@ -164,7 +197,7 @@ def load_data():
         joints[:,xx] = jts[s:s+max_ts]
         target_joints[:,xx] = next_jts[s:s+max_ts]
         target_pos[:,xx] = next_pos[s:s+max_ts]
-        target_quat[:,xx] = next_quat[s:s+max_ts]
+        target_rot[:,xx] = next_rot[s:s+max_ts]
         if cfg['experiment']['env_type'] == 'robosuite':
             gripper[:,xx] = grip[s:s+max_ts]
     # position, to_target, velocity
@@ -173,32 +206,33 @@ def load_data():
     st_val = max([1,int(n_episodes*.15)])
 
     data = {'train':{}, 'valid':{}}
-    data['valid']['states'] =  states[:,:st_val]
-    data['train']['states'] =  states[:,st_val:]
-    data['valid']['actions'] =  actions[:,:st_val]
-    data['train']['actions'] =  actions[:,st_val:]
-    data['valid']['joints'] =  joints[:,:st_val]
-    data['train']['joints'] =  joints[:,st_val:]
-    data['valid']['target_joints'] =  target_joints[:,:st_val]
-    data['train']['target_joints'] =  target_joints[:,st_val:]
-    data['valid']['target_pos'] =  target_pos[:,:st_val]
-    data['train']['target_pos'] =  target_pos[:,st_val:]
-    data['valid']['target_quat'] =  target_quat[:,:st_val]
-    data['train']['target_quat'] =  target_quat[:,st_val:]
+    mts = args.max_timestep
+    data['valid']['states'] =  states[:mts,:st_val]
+    data['train']['states'] =  states[:mts,st_val:]
+    data['valid']['actions'] =  actions[:mts,:st_val]
+    data['train']['actions'] =  actions[:mts,st_val:]
+    data['valid']['joints'] =  joints[:mts,:st_val]
+    data['train']['joints'] =  joints[:mts,st_val:]
+    data['valid']['target_joints'] =  target_joints[:mts,:st_val]
+    data['train']['target_joints'] =  target_joints[:mts,st_val:]
+    data['valid']['target_pos'] =  target_pos[:mts,:st_val]
+    data['train']['target_pos'] =  target_pos[:mts,st_val:]
+    data['valid']['target_rot'] =  target_rot[:mts,:st_val]
+    data['train']['target_rot'] =  target_rot[:mts,st_val:]
     if cfg['experiment']['env_type'] == 'robosuite':
-        data['valid']['gripper'] =  gripper[:,:st_val]
-        data['train']['gripper'] =  gripper[:,st_val:]
+        data['valid']['gripper'] =  gripper[:mts,:st_val]
+        data['train']['gripper'] =  gripper[:mts,st_val:]
 
     data['base_matrix'] = replay.base_matrix 
     print('diffs')
     print((next_jts-jts).min(0))
     print((next_jts-jts).max(0))
-    embed()
     return data
 
 def setup_eval():
    
     print('loading model: %s'%load_model)
+    cfg['robot']['controller_config_file'] = 'configs/%s_joint_position.json'%args.target_robot_name.lower()
     env = build_env(cfg['robot'], k=1, skip_state_keys=skip_state_keys, env_type=cfg['experiment']['env_type'], default_camera=args.camera)    
     if 'eval_seed' in cfg['experiment'].keys():
         eval_seed = cfg['experiment']['eval_seed'] + 1000
@@ -218,7 +252,8 @@ def setup_eval():
     savebase = load_model.replace('.pt','_BC_eval_%06d_S%06d'%(eval_replay_buffer_size, eval_seed))
     replay_file = savebase+'.pkl' 
     movie_file = savebase+'_%s.mp4' %args.camera
-    if not os.path.exists(replay_file):
+  
+    if not os.path.exists(replay_file) or args.force:
         rewards, replay_buffer = run_BC_eval(env, replay_buffer, cfg, cam_dim, savebase)
         pickle.dump(replay_buffer, open(replay_file, 'wb'))
         plt.figure()
@@ -231,7 +266,7 @@ def setup_eval():
     plot_replay(replay_buffer, savebase)
     if args.frames:
         frames = [replay_buffer.undo_frame_compression(replay_buffer.frames[f]) for f in np.arange(len(replay_buffer.frames))]
-        mimwrite(movie_file, frames)
+        mimwrite(movie_file, frames, fps=100)
 
 def run_BC_eval(env, replay_buffer, cfg, cam_dim, savebase):
     robot_name = cfg['robot']['robots'][0]
@@ -246,7 +281,8 @@ def run_BC_eval(env, replay_buffer, cfg, cam_dim, savebase):
     rewards = []
     
     data_action_trace = data['train']['actions'][:,0]
-    data_grip_trace = data['train']['gripper'][:,0]
+    if cfg['experiment']['env_type'] == 'robosuite':
+        data_grip_trace = data['train']['gripper'][:,0]
     with torch.no_grad():
         while num_steps < total_steps:
             #ts, reward, d, o = env.reset()
@@ -268,20 +304,26 @@ def run_BC_eval(env, replay_buffer, cfg, cam_dim, savebase):
 
             #ex_trace = data['train']['states'][:,0:1]
             #ex_action = data['train']['actions'][:,0]
+            switch = False
             while not done:
                 # Select action randomly or according to policy
                 base_x[e_step] = torch.FloatTensor(state)
                 output, h1_tm1, c1_tm1, h2_tm1, c2_tm1 = lstm(base_x[e_step], h1_tm1, c1_tm1, h2_tm1, c2_tm1)
+                #output, h1_tm1, c1_tm1, h2_tm1, c2_tm1 = lstm(base_x[e_step], h1_tm1, c1_tm1, h2_tm1, c2_tm1)
+                #if e_step < 250:
+                #    pred_action = data_action_trace[e_step]
+                #else:
+                #    pred_action = output[0].cpu().numpy()
                 pred_action = output[0].cpu().numpy()
-                pred_action = data_action_trace[e_step]
                 if cfg['experiment']['env_type'] == 'robosuite':
                     fake_grip = data_grip_trace[e_step]
                     action = np.hstack((pred_action, fake_grip))
                 else:
                     action = pred_action
-                env.sim.data.qpos[:len(pred_action)] = body[:-7]+pred_action
+                env.sim.data.qpos[:len(pred_action)] = body[:-19]+pred_action
                 action = np.zeros_like(action)
-                next_state, next_body, reward, done, info = env.step(action) 
+                next_state, next_body, reward, done, info = env.step(action)  
+                #print(env.env.robots[0].torques)
                 ep_reward += reward
                 if use_frames:
                     next_frame_compressed = compress_frame(env.render(camera_name=args.camera, height=h, width=w))
@@ -306,12 +348,16 @@ if __name__ == '__main__':
     parser.add_argument('--load_replay')
     parser.add_argument('--target_robot_name', default='')
     parser.add_argument('--eval', default=False, action='store_true')
+    parser.add_argument('--force', default=False, action='store_true')
     parser.add_argument('--load_model', default='')
     parser.add_argument('--loss', default='DH', choices=['DH', 'angle'])
     parser.add_argument('--device', default='cuda')
     parser.add_argument('--frames', action='store_true', default=False)
     parser.add_argument('--camera', default='')
     parser.add_argument('--num_eval_episodes', default=10, type=int)
+    parser.add_argument('--learning_rate', default=0.0001, type=float)
+    parser.add_argument('--max_timestep', default=50, type=int)
+
     args = parser.parse_args()
     seed = 323
     seed_everything(seed)
@@ -333,7 +379,7 @@ if __name__ == '__main__':
     else: 
         agent_load_dir, fname = os.path.split(args.load_replay)
         _, ddir = os.path.split(agent_load_dir)
-        exp_name = 'roboBC_act_%s'%(args.loss)
+        exp_name = 'roboBC_act_%s_lr%s'%(args.loss, args.learning_rate)
 
     agent_cfg_path = os.path.join(agent_load_dir, 'cfg.txt')
     print('cfg', agent_cfg_path)
@@ -357,7 +403,7 @@ if __name__ == '__main__':
     device = args.device
     results_dir = args.load_replay.replace('.pkl', '')
     # set random seed to 0
-    noise_std = 3
+    noise_std = 1
     grad_clip = 5
     hidden_size = 1024
     batch_size = 32
@@ -402,7 +448,7 @@ if __name__ == '__main__':
         pickle.dump(data, open(savebase+'_data.pkl', 'wb'))
         tb_writer = SummaryWriter(savebase)
         # use LBFGS as optimizer since we can load the whole data to train
-        opt = optim.Adam(lstm.parameters(), lr=0.0001)
+        opt = optim.Adam(lstm.parameters(), lr=args.learning_rate)
         train(data, step, n_epochs=2000)
 
 

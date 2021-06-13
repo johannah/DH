@@ -5,9 +5,10 @@ DH params found by Yuying Blair Huang
 """
 # Params for Denavit-Hartenberg Reference Frame Layout (DH)
 jaco27DOF_DH_lengths = {'D1':0.2755, 'D2':0.2050, 
-               'D3':0.2050, 'D4':0.2073,
-               'D5':0.1038, 'D6':0.1038, 
-               'D7':0.1600, 'e2':0.0098}
+                        'D3':0.2050, 'D4':0.2073,
+                        'D5':0.1038, 'D6':0.1038, 
+                        'D7':0.1600, 'e2':0.0098, 'D_grip':0.1775} # .001775e2 is dist to grip site
+
 
  
 DH_attributes_jaco27DOF = {
@@ -21,7 +22,7 @@ DH_attributes_jaco27DOF = {
                     -jaco27DOF_DH_lengths['e2'], 
                     -(jaco27DOF_DH_lengths['D4']+jaco27DOF_DH_lengths['D5']), 
                     0, 
-                    -(jaco27DOF_DH_lengths['D6']+jaco27DOF_DH_lengths['D7']))
+                    -(jaco27DOF_DH_lengths['D6']+jaco27DOF_DH_lengths['D_grip']))
            }
 # Params for Denavit-Hartenberg Reference Frame Layout (DH)
 Panda_DH_lengths = {'D1':0.333, 'D2':0, 
