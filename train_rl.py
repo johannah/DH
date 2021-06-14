@@ -75,6 +75,7 @@ def run_train(env, model, replay_buffer, kwargs, savedir, exp_name, start_timest
                 step_filepath = os.path.join(savedir, '{}_{:010d}'.format(exp_name, num_steps))
                 policy.save(step_filepath+'.pt')
             num_steps+=1
+            e_step+=1
         tb_writer.add_scalar('train_reward', ep_reward, num_steps)
         
 
@@ -122,7 +123,7 @@ def run_eval(env, policy, replay_buffer, kwargs, cfg, cam_dim, savebase):
         # IT SEEMS LIKE BASE_POS DOESNT CHANGE for DOOR/Jaco - will need to change things up if it does
         #print(env.env.robots[0].base_pos)
         #print(env.env.robots[0].base_ori)
-        while not done:
+        while not done and e_step < args.max_eval_timesteps:
             # Select action randomly or according to policy
             action = (
                     policy.select_action(state)
@@ -130,6 +131,8 @@ def run_eval(env, policy, replay_buffer, kwargs, cfg, cam_dim, savebase):
  
             next_state, next_body, reward, done, info = env.step(action) # take a random action
             ep_reward += reward
+            if e_step+1 == args.max_eval_timesteps:
+                done = True
             if use_frames:
                 next_frame_compressed = compress_frame(env.render(camera_name=args.camera, height=h, width=w))
                 replay_buffer.add(state, body, action, reward, next_state, next_body, done, 
@@ -142,6 +145,7 @@ def run_eval(env, policy, replay_buffer, kwargs, cfg, cam_dim, savebase):
             state = next_state
             body = next_body
             num_steps+=1
+            e_step+=1
         rewards.append(ep_reward)
     #replay_buffer.torques = torques
     return rewards, replay_buffer
@@ -175,7 +179,7 @@ def rollout():
     if 'eval_replay_buffer_size' in cfg['experiment'].keys():
         eval_replay_buffer_size = cfg['experiment']['eval_replay_buffer_size']
     else:
-        eval_replay_buffer_size =  int(env.max_timesteps*args.num_eval_episodes)
+        eval_replay_buffer_size =  int(min([env.max_timesteps, args.max_eval_timesteps])*args.num_eval_episodes)
     print('running eval for %s steps'%eval_replay_buffer_size)
  
     policy,  kwargs = build_model(cfg['experiment']['policy_name'], env)
@@ -208,6 +212,7 @@ if __name__ == '__main__':
     parser.add_argument('--camera', default='', choices=['default', 'frontview', 'sideview', 'birdview', 'agentview'])
     parser.add_argument('--load_model', default='')
     parser.add_argument('--num_eval_episodes', default=30, type=int)
+    parser.add_argument('--max_eval_timesteps', default=100, type=int)
     args = parser.parse_args()
     # keys that are robot specific
     

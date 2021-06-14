@@ -383,17 +383,23 @@ def build_replay_buffer(cfg, env, max_size, cam_dim, seed):
     replay_buffer.base_matrix = env.base_matrix
     return replay_buffer
 
+def get_replay_state_dict(replay_buffer, use_states=[]):
     # find eef position according to DH
-#    if robot_name in robot_attributes.keys():
-#        n, ss = replay_buffer.states.shape
-#        k = replay_buffer.k
-#        idx = (k-1)*(ss//k) # start at most recent observation
-#        data = {}
-#        for key in replay_buffer.obs_keys:
-#            o_size = env.obs_sizes[key]
-#            data[key] = replay_buffer.states[:, idx:idx+o_size]
-#            idx += o_size
-#
+    n, ss = replay_buffer.states.shape
+    k = replay_buffer.k
+    idx = (k-1)*(ss//k) # start at most recent observation
+    state_data = {'state':np.empty((n,0))}
+    next_state_data = {'next_state':np.empty((n,0))}
+    for key in replay_buffer.obs_keys:
+        o_size = replay_buffer.obs_sizes[key]
+        state_data[key] = replay_buffer.states[:, idx:idx+o_size]
+        next_state_data[key] = replay_buffer.next_states[:, idx:idx+o_size]
+        if key in use_states:
+            state_data['state'] = np.hstack((state_data['state'], state_data[key]))
+            next_state_data['next_state'] = np.hstack((next_state_data['next_state'], next_state_data[key]))
+        idx += o_size
+    return state_data, next_state_data
+
 
 def plot_replay(env, replay_buffer, savebase, frames=False):
     joint_positions = replay_buffer.bodies[:,:-19]
@@ -426,7 +432,6 @@ def plot_replay(env, replay_buffer, savebase, frames=False):
     dh_pos = dh_rmat[:,:3,3]#np.array([a[0] for a in dh_posquat])
     dh_euler = np.array([T.mat2euler(a) for a in dh_rmat])
     dh_quat = np.array([T.mat2quat(a) for a in dh_rmat])
-    embed()
  
     #true_ = env.sim.data.get_body_xmat('gripper0_eef')
     #dh_ori = np.array([quaternion_from_matrix(f_eef[x]) for x in range(n)])
