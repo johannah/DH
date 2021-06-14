@@ -83,17 +83,18 @@ def run_train(env, model, replay_buffer, kwargs, savedir, exp_name, start_timest
     pickle.dump(replay_buffer, open(step_filepath+'.pkl', 'wb'))
     policy.save(step_filepath+'.pt')
  
-def make_savedir(cfg):
+def make_savedir(cfg, new_log_dir=''):
     cnt = 0
+    log_dir = new_log_dir if new_log_dir else cfg['experiment']['log_dir']
 
-    savedir = os.path.join(cfg['experiment']['log_dir'], "%s_%s_%05d_%s_%s_%02d"%(cfg['experiment']['exp_name'], 
-                                                                        cfg['robot']['env_name'],  cfg['experiment']['seed'], 
-                                                                        cfg['robot']['robots'][0], cfg['robot']['controller'],  cnt))
+    savedir = os.path.join(log_dir, "%s_%s_%05d_%s_%s_%02d"%(cfg['experiment']['exp_name'],
+                                                             cfg['robot']['env_name'],  cfg['experiment']['seed'],
+                                                             cfg['robot']['robots'][0], cfg['robot']['controller'],  cnt))
     while len(glob(os.path.join(savedir, '*.pt'))):
         cnt +=1
-        savedir = os.path.join(cfg['experiment']['log_dir'], "%s_%s_%05d_%s_%s_%02d"%(cfg['experiment']['exp_name'], 
-                                                                        cfg['robot']['env_name'],  cfg['experiment']['seed'], 
-                                                                        cfg['robot']['robots'][0], cfg['robot']['controller'],  cnt))
+        savedir = os.path.join(log_dir, "%s_%s_%05d_%s_%s_%02d"%(cfg['experiment']['exp_name'],
+                                                                 cfg['robot']['env_name'],  cfg['experiment']['seed'],
+                                                                 cfg['robot']['robots'][0], cfg['robot']['controller'],  cnt))
     if not os.path.exists(savedir):
         os.makedirs(savedir)
  
@@ -213,6 +214,8 @@ if __name__ == '__main__':
     parser.add_argument('--load_model', default='')
     parser.add_argument('--num_eval_episodes', default=30, type=int)
     parser.add_argument('--max_eval_timesteps', default=100, type=int)
+    parser.add_argument('--log_dir', default='', type=str, help="Overwrites the log_dir in the config file (Needed for CC).")
+
     args = parser.parse_args()
     # keys that are robot specific
     
@@ -224,7 +227,7 @@ if __name__ == '__main__':
         seed_everything(cfg['experiment']['seed'])
         random_state = np.random.RandomState(cfg['experiment']['seed'])
         env = build_env(cfg['robot'], cfg['robot']['frame_stack'], skip_state_keys=skip_state_keys, env_type=cfg['experiment']['env_type'], default_camera=args.camera)
-        savedir = make_savedir(cfg)
+        savedir = make_savedir(cfg, args.log_dir)
         policy, kwargs = build_model(cfg['experiment']['policy_name'], env)
 
         replay_buffer = build_replay_buffer(cfg, env, cfg['experiment']['replay_buffer_size'], cam_dim=(0,0,0), seed=cfg['experiment']['seed'])
