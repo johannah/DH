@@ -9,7 +9,7 @@ import torchvision
 import numpy as np
 
 
-COMET_LOG_FREQ = 1
+COMET_LOG_FREQ = 10
 SOURCE_CODES = [
     'dh_utils.py',
     'replay_buffer.py',
