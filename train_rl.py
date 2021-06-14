@@ -1,3 +1,5 @@
+from comet_ml import Experiment
+
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -8,6 +10,7 @@ import os
 from glob import glob
 from copy import deepcopy
 import pickle
+import datetime
 
 import json
 from imageio import mimwrite
@@ -22,6 +25,7 @@ import TD3
 
 from dh_utils import seed_everything, normalize_joints, skip_state_keys
 from utils import build_replay_buffer, build_env, build_model, plot_replay
+from logger import Logger
 from IPython import embed
 
 
@@ -31,7 +35,7 @@ https://github.com/ARISE-Initiative/robosuite/blob/fc3738ca6361db73376e4c9d8a09b
 https://github.com/ARISE-Initiative/robosuite/blob/65d3b9ad28d6e7a006e9eef7c5a0330816483be4/robosuite/environments/manipulation/single_arm_env.py#L41
 """
 def run_train(env, model, replay_buffer, kwargs, savedir, exp_name, start_timesteps, save_every, num_steps=0, max_timesteps=2000, use_frames=False, expl_noise=0.1, batch_size=128):
-    tb_writer = SummaryWriter(savedir)
+    L = Logger(savedir, use_tb=True, use_comet=args.use_comet, project_name="DH")
     steps = 0
     while num_steps < max_timesteps:
         #ts, reward, d, o = env.reset()
@@ -69,14 +73,14 @@ def run_train(env, model, replay_buffer, kwargs, savedir, exp_name, start_timest
             if num_steps > start_timesteps:
                 critic_loss, actor_loss = policy.train(num_steps, replay_buffer, batch_size)
                 if actor_loss != 0:
-                    tb_writer.add_scalar('actor_loss', actor_loss, num_steps)
-                tb_writer.add_scalar('critic_loss', critic_loss, num_steps)
+                    L.log('actor_loss', actor_loss, num_steps)
+                L.log('critic_loss', critic_loss, num_steps)
             if not num_steps % save_every:
                 step_filepath = os.path.join(savedir, '{}_{:010d}'.format(exp_name, num_steps))
                 policy.save(step_filepath+'.pt')
             num_steps+=1
             e_step+=1
-        tb_writer.add_scalar('train_reward', ep_reward, num_steps)
+        L.log('train_reward', ep_reward, num_steps)
         
 
     step_filepath = os.path.join(savedir, '{}_{:010d}'.format(exp_name, num_steps))
@@ -85,16 +89,19 @@ def run_train(env, model, replay_buffer, kwargs, savedir, exp_name, start_timest
  
 def make_savedir(cfg, new_log_dir=''):
     cnt = 0
+    datetime_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     log_dir = new_log_dir if new_log_dir else cfg['experiment']['log_dir']
 
-    savedir = os.path.join(log_dir, "%s_%s_%05d_%s_%s_%02d"%(cfg['experiment']['exp_name'],
-                                                             cfg['robot']['env_name'],  cfg['experiment']['seed'],
-                                                             cfg['robot']['robots'][0], cfg['robot']['controller'],  cnt))
+    savedir = os.path.join(log_dir, "%s_%s_%05d_%s_%s_%s_%02d"%(cfg['experiment']['exp_name'],
+                                                                cfg['robot']['env_name'],  cfg['experiment']['seed'],
+                                                                cfg['robot']['robots'][0], cfg['robot']['controller'],
+                                                                datetime_str, cnt))
     while len(glob(os.path.join(savedir, '*.pt'))):
         cnt +=1
-        savedir = os.path.join(log_dir, "%s_%s_%05d_%s_%s_%02d"%(cfg['experiment']['exp_name'],
-                                                                 cfg['robot']['env_name'],  cfg['experiment']['seed'],
-                                                                 cfg['robot']['robots'][0], cfg['robot']['controller'],  cnt))
+        savedir = os.path.join(log_dir, "%s_%s_%05d_%s_%s_%s_%02d"%(cfg['experiment']['exp_name'],
+                                                                    cfg['robot']['env_name'],  cfg['experiment']['seed'],
+                                                                    cfg['robot']['robots'][0], cfg['robot']['controller'],
+                                                                    datetime_str, cnt))
     if not os.path.exists(savedir):
         os.makedirs(savedir)
  
@@ -215,6 +222,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_eval_episodes', default=30, type=int)
     parser.add_argument('--max_eval_timesteps', default=100, type=int)
     parser.add_argument('--log_dir', default='', type=str, help="Overwrites the log_dir in the config file (Needed for CC).")
+    parser.add_argument('--use_comet', action='store_true', default=False)
 
     args = parser.parse_args()
     # keys that are robot specific

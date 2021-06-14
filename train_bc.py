@@ -1,3 +1,5 @@
+from comet_ml import Experiment
+
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -10,6 +12,7 @@ import time
 import os, sys
 import numpy as np
 import shutil
+from pathlib import Path
 
 
 import torch
@@ -26,6 +29,7 @@ from replay_buffer import compress_frame
 from dh_utils import find_latest_checkpoint, create_results_dir, skip_state_keys
 from dh_utils import robotDH, robotDHLearnable, seed_everything, normalize_joints
 from dh_utils import load_robosuite_data, get_data_norm_params, quaternion_from_matrix, quaternion_matrix, robot_attributes
+from logger import Logger
 
 from IPython import embed 
 
@@ -128,10 +132,10 @@ def train(data, step=0, n_epochs=1e7):
                         dh_rot_loss = mean_angle_btw_vectors(pred_rot.detach().contiguous().view(ts*bs,3,3), 
                                                              target_rot.detach().contiguous().view(ts*bs,3,3))
                         dh_loss = dh_pos_loss + dh_rot_loss
-                loss_dict = {'dh_pos_%s'%(phase):dh_pos_loss, 
-                                                             'dh_rot_%s'%(phase):dh_rot_loss, 
-                                                             'dh_%s'%(phase):dh_loss, 
-                                                             'jt_%s'%(phase):joint_loss}
+                loss_dict = {'dh_pos_%s'%(phase):dh_pos_loss,
+                             'dh_rot_%s'%(phase):dh_rot_loss,
+                             'dh_%s'%(phase):dh_loss,
+                             'jt_%s'%(phase):joint_loss}
  
                 if phase == 'train':
                     clip_grad_norm_(lstm.parameters(), grad_clip)
@@ -141,7 +145,7 @@ def train(data, step=0, n_epochs=1e7):
                     if args.learn_dh:
                         dh_opt.step()
                     if not step % (bs*10):
-                        tb_writer.add_scalars('BC_loss',loss_dict, step)
+                        L.log('BC_loss', loss_dict, step)
                     step+=bs
                 else:
                     valid_loss = loss
@@ -151,7 +155,7 @@ def train(data, step=0, n_epochs=1e7):
                 bs = en-st
                 batch_cnt +=1
             
-            tb_writer.add_scalars('BC_loss',loss_dict, step)
+            L.log('BC_loss', loss_dict, step)
  
         print('{} epoch:{} step:{} loss:{}'.format(phase, epoch, step, loss))
         if not epoch % save_every_epochs:
@@ -378,6 +382,7 @@ if __name__ == '__main__':
     parser.add_argument('--alpha', default=2000, type=int)
     parser.add_argument('--drop_rot', default=False, action='store_true')
     parser.add_argument('--noise', default=1, type=int)
+    parser.add_argument('--use_comet', action='store_true', default=False)
     args = parser.parse_args()
     seed = 323
     seed_everything(seed)
@@ -467,7 +472,7 @@ if __name__ == '__main__':
         setup_eval()
     else:
         pickle.dump(data, open(savebase+'_data.pkl', 'wb'))
-        tb_writer = SummaryWriter(savebase)
+        L = Logger(savebase, use_tb=True, use_comet=args.use_comet, project_name="DH")
         # use LBFGS as optimizer since we can load the whole data to train
         opt = optim.Adam(lstm.parameters(), lr=0.0001)
         if args.learn_dh:
