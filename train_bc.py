@@ -106,10 +106,15 @@ def train(data, step=0, n_epochs=1e7):
                 pred_rot = pred_rot_mat[:,:,:3,:3]
                 if args.loss == 'DH':
                     dh_pos_loss = args.alpha*criterion(pred_pos, target_pos)
-                    # TODO need relative rotation
-                    dh_rot_loss = mean_angle_btw_vectors(pred_rot.contiguous().view(ts*bs,3,3), 
-                                                         target_rot.contiguous().view(ts*bs,3,3))
-                    dh_loss = dh_pos_loss + dh_rot_loss
+                    if args.drop_rot:
+                        # DONT USE ROTATION
+                        dh_rot_loss = mean_angle_btw_vectors(pred_rot.detach().contiguous().view(ts*bs,3,3), 
+                                                             target_rot.detach().contiguous().view(ts*bs,3,3))
+                        dh_loss = dh_pos_loss
+                    else:
+                        dh_rot_loss = mean_angle_btw_vectors(pred_rot.contiguous().view(ts*bs,3,3), 
+                                                             target_rot.contiguous().view(ts*bs,3,3))
+                        dh_loss = dh_pos_loss + dh_rot_loss
                     loss = dh_loss 
                     with torch.no_grad():
                         joint_loss = criterion(pred_diff.detach(), target_diff)
@@ -366,7 +371,8 @@ if __name__ == '__main__':
     parser.add_argument('--learning_rate', default=0.0001, type=float)
     parser.add_argument('--max_timesteps', default=100, type=int)
     parser.add_argument('--alpha', default=2000, type=int)
-
+    parser.add_argument('--drop_rot', default=False, action='store_true')
+    parser.add_argument('--noise', default=1, type=int)
     args = parser.parse_args()
     seed = 323
     seed_everything(seed)
@@ -388,7 +394,7 @@ if __name__ == '__main__':
     else: 
         agent_load_dir, fname = os.path.split(args.load_replay)
         _, ddir = os.path.split(agent_load_dir)
-        exp_name = 'BC_state_%s_lr%s_TS%s'%(args.loss, args.learning_rate, args.max_timesteps)
+        exp_name = 'BC_state_%s_lr%s_TS%s_N%s_ROT%s'%(args.loss, args.learning_rate, args.max_timesteps, args.noise, int(not args.drop_rot))
 
     agent_cfg_path = os.path.join(agent_load_dir, 'cfg.txt')
     print('cfg', agent_cfg_path)
@@ -412,7 +418,7 @@ if __name__ == '__main__':
     device = args.device
     results_dir = args.load_replay.replace('.pkl', '')
     # set random seed to 0
-    noise_std = 1
+    noise_std = args.noise
     grad_clip = 3
     hidden_size = 512
     batch_size = 32
