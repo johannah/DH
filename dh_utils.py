@@ -165,6 +165,90 @@ def quaternion_matrix(quaternion):
     )
 
 
+def so3_relative_angle(R1, R2, cos_angle: bool = False):
+    """
+    from: https://pytorch3d.readthedocs.io/en/latest/_modules/pytorch3d/transforms/so3.html#so3_relative_angle
+
+    Calculates the relative angle (in radians) between pairs of
+    rotation matrices `R1` and `R2` with `angle = acos(0.5 * (Trace(R1 R2^T)-1))`
+
+    .. note::
+        This corresponds to a geodesic distance on the 3D manifold of rotation
+        matrices.
+
+    Args:
+        R1: Batch of rotation matrices of shape `(minibatch, 3, 3)`.
+        R2: Batch of rotation matrices of shape `(minibatch, 3, 3)`.
+        cos_angle: If==True return cosine of the relative angle rather than
+                   the angle itself. This can avoid the unstable
+                   calculation of `acos`.
+
+    Returns:
+        Corresponding rotation angles of shape `(minibatch,)`.
+        If `cos_angle==True`, returns the cosine of the angles.
+
+    Raises:
+        ValueError if `R1` or `R2` is of incorrect shape.
+        ValueError if `R1` or `R2` has an unexpected trace.
+    """
+    R12 = torch.bmm(R1, R2.permute(0, 2, 1))
+    return so3_rotation_angle(R12, cos_angle=cos_angle)
+
+
+
+def so3_rotation_angle(R, eps: float = 1e-4, cos_angle: bool = False):
+    """
+    Calculates angles (in radians) of a batch of rotation matrices `R` with
+    `angle = acos(0.5 * (Trace(R)-1))`. The trace of the
+    input matrices is checked to be in the valid range `[-1-eps,3+eps]`.
+    The `eps` argument is a small constant that allows for small errors
+    caused by limited machine precision.
+
+    Args:
+        R: Batch of rotation matrices of shape `(minibatch, 3, 3)`.
+        eps: Tolerance for the valid trace check.
+        cos_angle: If==True return cosine of the rotation angles rather than
+                   the angle itself. This can avoid the unstable
+                   calculation of `acos`.
+
+    Returns:
+        Corresponding rotation angles of shape `(minibatch,)`.
+        If `cos_angle==True`, returns the cosine of the angles.
+
+    Raises:
+        ValueError if `R` is of incorrect shape.
+        ValueError if `R` has an unexpected trace.
+    """
+
+    N, dim1, dim2 = R.shape
+    if dim1 != 3 or dim2 != 3:
+        raise ValueError("Input has to be a batch of 3x3 Tensors.")
+
+    rot_trace = R[:, 0, 0] + R[:, 1, 1] + R[:, 2, 2]
+
+    if ((rot_trace < -1.0 - eps) + (rot_trace > 3.0 + eps)).any():
+        raise ValueError("A matrix has trace outside valid range [-1-eps,3+eps].")
+
+    # clamp to valid range
+    rot_trace = torch.clamp(rot_trace, -1.0, 3.0)
+
+    # phi ... rotation angle
+    phi = 0.5 * (rot_trace - 1.0)
+
+    if cos_angle:
+        return phi
+    else:
+        # pyre-fixme[16]: `float` has no attribute `acos`.
+        return phi.acos()
+
+def mean_angle_btw_vectors(v1, v2, eps = 1e-4):
+    # https://towardsdatascience.com/better-rotation-representation    s-for-accurate-pose-estimation-e890a7e1317f
+    dot_product = torch.sum(v1*v2, axis=-1)
+    cos_a = dot_product / (torch.norm(v1, dim=-1) * torch.norm(v2,     dim=-1))
+    cos_a = torch.clamp(cos_a, -1 + eps, 1 - eps)
+    angle_dist = torch.acos(cos_a)
+    return torch.mean(angle_dist)
+
 class robotDH():
     def __init__(self, robot_name, device='cpu'):
         self.device = device

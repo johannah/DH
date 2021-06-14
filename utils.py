@@ -27,7 +27,7 @@ from robosuite.utils.transform_utils import mat2quat
 
 from dm_control import suite
 
-import TD3
+import TD3, TD3_kinematic
 from replay_buffer import ReplayBuffer, compress_frame
 from dh_utils import robotDH, quaternion_matrix, quaternion_from_matrix, robot_attributes, normalize_joints
 
@@ -353,7 +353,13 @@ def build_model(policy_name, env):
                 'noise_clip':0.5, 'policy_freq':2, 
                 'discount':0.99, 'max_action':max_action, 'min_action':min_action}
         policy = TD3.TD3(**kwargs)
-
+    if policy_name == 'TD3_kinematic':
+        kwargs = {'tau':0.005, 
+                'action_dim':action_dim, 'state_dim':state_dim, 'body_dim':body_dim,
+                'policy_noise':0.2, 'max_policy_action':1.0, 
+                'noise_clip':0.5, 'policy_freq':2, 
+                'discount':0.99, 'max_action':max_action, 'min_action':min_action}
+        policy = TD3_kinematic.TD3(**kwargs)
 
     return policy, kwargs
 

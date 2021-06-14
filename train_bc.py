@@ -23,7 +23,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from utils import build_env, build_model, build_replay_buffer, plot_replay, get_replay_state_dict
 from replay_buffer import compress_frame
-from dh_utils import find_latest_checkpoint, create_results_dir, skip_state_keys
+from dh_utils import find_latest_checkpoint, create_results_dir, skip_state_keys, mean_angle_btw_vectors, so3_relative_angle
 from dh_utils import robotDH, seed_everything, normalize_joints
 from dh_utils import load_robosuite_data, get_data_norm_params, quaternion_from_matrix, quaternion_matrix, robot_attributes
 
@@ -61,21 +61,6 @@ def forward_pass(x, phase='train'):
         output, h1_tm1, c1_tm1, h2_tm1, c2_tm1 = lstm(x[i], h1_tm1, c1_tm1, h2_tm1, c2_tm1)
         y_pred[i] = y_pred[i] + output
     return y_pred
-
-#def mean_angle_btw_vectors(v1, v2, eps = 1e-8):
-#    dot_product = tf.reduce_sum(v1*v2, axis=-1)
-#    cos_a = dot_product / (tf.norm(v1, axis=-1) * tf.norm(v2, axis=-1))
-#    cos_a = tf.clip_by_value(cos_a, -1 + eps, 1 - eps)
-#    angle_dist = tf.math.acos(cos_a) / np.pi * 180.0
-#    return tf.reduce_mean(angle_dist)
-
-def mean_angle_btw_vectors(v1, v2, eps = 1e-4):
-    # https://towardsdatascience.com/better-rotation-representations-for-accurate-pose-estimation-e890a7e1317f
-    dot_product = torch.sum(v1*v2, axis=-1)
-    cos_a = dot_product / (torch.norm(v1, dim=-1) * torch.norm(v2, dim=-1))
-    cos_a = torch.clamp(cos_a, -1 + eps, 1 - eps)
-    angle_dist = torch.acos(cos_a) 
-    return torch.mean(angle_dist)
 
 def train(data, step=0, n_epochs=1e7):
     # todo add running avg for loss
