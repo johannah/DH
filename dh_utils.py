@@ -22,6 +22,35 @@ _EPS = np.finfo(float).eps * 4.0
 skip_state_keys = ['robot0_joint_pos_cos', 'robot0_joint_pos_sin','robot0_joint_vel', 'robot0_proprio-state']
 
 
+
+#c1 = tf.nn.l2_normalize(x[:, :3], axis=-1)
+#c2 = tf.nn.l2_normalize(x[:, 3:] - self.dot(c1,x[:, 3:])*c1, axis=-1)
+#x = tf.concat([c1,c2], axis=-1)
+#self.add_metric(mean_angle_btw_vectors(inputs, self.get_rotated(x)), 
+#                    name='mean_angular_distance', aggregation='mean')
+# ideas for rotation losses from 
+# https://towardsdatascience.com/better-rotation-representations-for-accurate-pose-estimation-e890a7e1317f
+#def euler_loss(y_true, y_pred):
+#    dist1 = tf.abs(y_true - y_pred)
+#    dist2 = tf.abs(2*np.pi + y_true - y_pred)
+#    dist3 = tf.abs(-2*np.pi + y_true - y_pred)
+#    loss = tf.where(dist1<dist2, dist1, dist2)
+#    loss = tf.where(loss<dist3, loss, dist3)
+#    return tf.reduce_mean(loss)
+#  
+#def quaternion_loss(y_true, y_pred):
+#    dist1 = tf.reduce_mean(tf.abs(y_true-y_pred), axis=-1)
+#    dist2 = tf.reduce_mean(tf.abs(y_true+y_pred), axis=-1)
+#    loss = tf.where(dist1<dist2, dist1, dist2)
+#    return tf.reduce_mean(loss)
+#  
+#def mean_angle_btw_vectors(v1, v2, eps = 1e-8):
+#    dot_product = tf.reduce_sum(v1*v2, axis=-1)
+#    cos_a = dot_product / (tf.norm(v1, axis=-1) * tf.norm(v2, axis=-1))
+#    cos_a = tf.clip_by_value(cos_a, -1 + eps, 1 - eps)
+#    angle_dist = tf.math.acos(cos_a) / np.pi * 180.0
+#    return tf.reduce_mean(angle_dist)
+
 def normalize_joints(angles):
     """
     This removes the wrapping from joint angles and ensures joint vals are bt -pi < vals < pi
@@ -160,6 +189,9 @@ class robotDH():
         _T = base_matrix
         for _a in range(fs):        
             _T1 = self.np_dh_transform(_a, angles[:,_a])
+            #for e in range(_T1.shape[0]):
+            #    if not np.allclose(np.dot(_T1[e].T, _T1[e]), np.identity(4)):
+            #        embed()
             _T = np.matmul(_T, _T1)
         return _T
 

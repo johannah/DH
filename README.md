@@ -34,3 +34,26 @@ This will result in plots for reward & target position, and a video of the episo
 ### NOTE: This is not really relevant with dm_control - but used with robosuite and JOINT_POSITION controller
 
 `python train_bc.py --load_model <path-to-saved-bc-model> --eval --frames`
+
+
+# Adding Robot Configurations to dm_control 
+
+We utilize some non-standard dm_control robots for experiments. To work with these, copy the contents of the "robots" directory to your dm_control installation: 
+
+```
+cd DH
+cp robots/dm_control/*.* ../dm_control/dm_control/suite/ 
+cd ../dm_control 
+pip install .
+```
+Then you can experiment with these models as you would other robots. 
+
+For instance, to train an rl reacher agent with links which are double the size of the standard reacher: 
+
+```
+cd DH
+python train_rl.py --cfg experiments/reacher_double.cfg
+```
+
+
+

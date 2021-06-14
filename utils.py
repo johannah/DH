@@ -20,6 +20,7 @@ import gym
 import gym.spaces as spaces
 
 import robosuite
+import robosuite.utils.transform_utils as T
 import robosuite.utils.macros as macros
 macros.IMAGE_CONVENTION = 'opencv'
 from robosuite.utils.transform_utils import mat2quat
@@ -113,6 +114,51 @@ def to_np(t):
     else:
         return t.cpu().detach().numpy()
 
+def dm_site_pose_in_base_from_name(self, physics, root_body, name):
+    """
+    A helper function that takes in a named data field and returns the pose
+    of that object in the base frame.
+    Args:
+        name (str): Name of site in sim to grab pose
+    Returns:
+        np.array: (4,4) array corresponding to the pose of @name in the base frame
+    """
+    pos_in_world = physics.named.data.xpos[name]
+    rot_in_world = physics.named.data.xmat[name].reshape((3, 3))
+    pose_in_world = T.make_pose(pos_in_world, rot_in_world)
+
+    base_pos_in_world =  physics.named.data.xpos[root_body]
+    base_rot_in_world =  physics.named.data.xmat[root_body].reshape((3, 3))
+    base_pose_in_world = T.make_pose(base_pos_in_world, base_rot_in_world)
+    world_pose_in_base = T.pose_inv(base_pose_in_world)
+
+    pose_in_base = T.pose_in_A_to_pose_in_B(pose_in_world, world_pose_in_base)
+    return pose_in_base
+
+
+
+def site_pose_in_base_from_name(self, sim, root_body, name):
+    """
+    A helper function that takes in a named data field and returns the pose
+    of that object in the base frame.
+    Args:
+        name (str): Name of site in sim to grab pose
+    Returns:
+        np.array: (4,4) array corresponding to the pose of @name in the base frame
+    """
+
+    pos_in_world = sim.data.get_site_xpos(name)
+    rot_in_world = sim.data.get_site_xmat(name).reshape((3, 3))
+    pose_in_world = T.make_pose(pos_in_world, rot_in_world)
+
+    base_pos_in_world = sim.data.get_body_xpos(root_body)
+    base_rot_in_world = sim.data.get_body_xmat(root_body).reshape((3, 3))
+    base_pose_in_world = T.make_pose(base_pos_in_world, base_rot_in_world)
+    world_pose_in_base = T.pose_inv(base_pose_in_world)
+
+    pose_in_base = T.pose_in_A_to_pose_in_B(pose_in_world, world_pose_in_base)
+    return pose_in_base
+
 class EnvStack():
     def __init__(self, env, k, skip_state_keys=[], env_type='robosuite', default_camera='', xpos_target='', bpos="root"):
         assert env_type in ['robosuite', 'dm_control']
@@ -135,7 +181,7 @@ class EnvStack():
             self.max_timesteps = self.env.horizon
             self.sim = self.env.sim
             if default_camera == '':
-                 self.default_camera = 'agentview'
+                 self.default_camera = 'frontview'
 
             self.bpos = self.env.robots[0].base_pos
             self.bori = self.env.robots[0].base_ori
@@ -143,11 +189,12 @@ class EnvStack():
             # TODO add conversion to rotation matrix
             self.base_matrix = quaternion_matrix(self.bori)
             self.base_matrix[:3, 3] = self.bpos
+            
             # TODO this is hacky - but it seems the world needs to be flipped in y,z to be correct
             # Sanity checked in Jaco w/ Door
             # ensure this holds for other robots
-            self.base_matrix[1,1] = -1
-            self.base_matrix[2,2] = -1
+            #self.base_matrix[1,1] = -1
+            #self.base_matrix[2,2] = -1
 
         elif self.env_type == 'dm_control':
             self.control_min = self.env.action_spec().minimum[0]
@@ -159,10 +206,12 @@ class EnvStack():
                  self.default_camera = -1
   
             self.base_matrix = np.eye(4)
-            self.base_matrix[:3,:3] = self.env.physics.named.data.geom_xmat[self.bpos].reshape(3,3)
-            self.bpos = self.env.physics.named.data.geom_xpos[self.bpos]
+            # TODO hardcoded for reacher
+            # eye is right rot for reachr
+            #self.base_matrix[:3, :3] =  self.env.physics.named.data.geom_xmat['root'].reshape(3,3)
+            self.bpos = self.env.physics.named.data.geom_xpos['root']
             self.base_matrix[:3, 3] = self.bpos
-            self.base_matrix[1,1] = 1 # TODO FOUND EXPERIMENTALLY FOR REACHER
+            #self.base_matrix[1,1] = 1 # TODO FOUND EXPERIMENTALLY FOR REACHER
             self.bori = quaternion_from_matrix(self.base_matrix)
  
         total_size = 0
@@ -208,10 +257,20 @@ class EnvStack():
 
     def make_body(self):
         if self.env_type == 'dm_control':
-            bxq = np.hstack((self.env.physics.data.qpos, self.env.physics.named.data.xpos[self.xpos_target], self.env.physics.named.data.xquat[self.xpos_target]))
+            # TODO hardcoded arm debug reacher
+            pos_in_world = self.env.physics.named.data.xpos[self.xpos_target]
+            rot_in_world = self.env.physics.named.data.xmat[self.xpos_target].reshape((3, 3))
+            targ_rmat = T.make_pose(pos_in_world, rot_in_world).reshape(16)
+            #targ_rmat = dm_site_pose_in_base_from_name(self, self.env.physics, "arm", self.xpos_target).reshape(16)
+            #targ_rmat = self.env.physics.named.data.geom_xmat[self.xpos_target].reshape(16)
+            bxq = np.hstack((self.env.physics.data.qpos, self.env.physics.named.data.xpos[self.xpos_target], targ_rmat))
         if self.env_type == 'robosuite':
             r = self.env.robots[0]
-            bxq = np.hstack((r._joint_positions, self.env.sim.data.site_xpos[r.eef_site_id], self.env.sim.data.body_xquat[r.eef_site_id]))
+            #bxq = np.hstack((r._joint_positions, self.env.sim.data.site_xpos[r.eef_site_id], self.env.sim.data.get_body_xquat[r.eef_site_id]))
+            #bxq = np.hstack((r._joint_positions, self.env.sim.data.site_xpos[r.eef_site_id], r.pose_in_base_from_name('gripper0_eef').reshape(16)))
+            grip_rmat = site_pose_in_base_from_name(self, self.env.sim, r.robot_model.root_body, r.gripper.important_sites['grip_site'])
+            # joint pos, eef in world frame, grip site in base frame
+            bxq = np.hstack((r._joint_positions, self.env.sim.data.site_xpos[r.eef_site_id], grip_rmat.reshape(16)))
             #bx = np.hstack((r.eef_pos(), r.eef_quat()))
         return bxq
 
@@ -249,9 +308,14 @@ class EnvStack():
 
 def build_env(cfg, k, skip_state_keys, env_type='robosuite', default_camera=''):
     if env_type == 'robosuite':
-        controller_configs = robosuite.load_controller_config(default_controller=cfg['controller'])
-        if cfg['controller'] == 'JOINT_POSITION':
-            controller_configs['kp'] = 150
+        if 'controller_config_file' in cfg.keys():
+            cfg_file = os.path.abspath(cfg['controller_config_file'])
+            print('loading controller from', cfg_file)
+            controller_configs = robosuite.load_controller_config(custom_fpath=cfg_file)
+        else:
+            controller_configs = robosuite.load_controller_config(default_controller=cfg['controller'])
+        #from robosuite.models.grippers import JacoThreeFingerGripper
+        #gripper = JacoThreeFingerGripper
         env = robosuite.make(env_name=cfg['env_name'], 
                          robots=cfg['robots'], 
                          controller_configs=controller_configs,
@@ -319,82 +383,124 @@ def build_replay_buffer(cfg, env, max_size, cam_dim, seed):
     replay_buffer.base_matrix = env.base_matrix
     return replay_buffer
 
-def plot_replay(replay_buffer, savebase, frames=False):
-    joint_positions = replay_buffer.bodies[:,:-7]
-    next_joint_positions = replay_buffer.next_bodies[:,:-7]
-
-    #norm_joint_positions = normalize_joints(deepcopy(joint_positions))
-    #next_norm_joint_positions = normalize_joints(deepcopy(next_joint_positions))
-
-    rpos = replay_buffer.bodies[:,-7:-7+3]
-    rquat = replay_buffer.bodies[:,-7+3:]
-
+def get_replay_state_dict(replay_buffer, use_states=[]):
     # find eef position according to DH
-#    if robot_name in robot_attributes.keys():
-#        n, ss = replay_buffer.states.shape
-#        k = replay_buffer.k
-#        idx = (k-1)*(ss//k) # start at most recent observation
-#        data = {}
-#        for key in replay_buffer.obs_keys:
-#            o_size = env.obs_sizes[key]
-#            data[key] = replay_buffer.states[:, idx:idx+o_size]
-#            idx += o_size
-#
-    rdh = robotDH(replay_buffer.cfg['robot']['robots'][0])
+    n, ss = replay_buffer.states.shape
+    k = replay_buffer.k
+    idx = (k-1)*(ss//k) # start at most recent observation
+    state_data = {'state':np.empty((n,0))}
+    next_state_data = {'next_state':np.empty((n,0))}
+    for key in replay_buffer.obs_keys:
+        o_size = replay_buffer.obs_sizes[key]
+        state_data[key] = replay_buffer.states[:, idx:idx+o_size]
+        next_state_data[key] = replay_buffer.next_states[:, idx:idx+o_size]
+        if key in use_states:
+            state_data['state'] = np.hstack((state_data['state'], state_data[key]))
+            next_state_data['next_state'] = np.hstack((next_state_data['next_state'], next_state_data[key]))
+        idx += o_size
+    return state_data, next_state_data
+
+
+def plot_replay(env, replay_buffer, savebase, frames=False):
+    joint_positions = replay_buffer.bodies[:,:-19]
+    next_joint_positions = replay_buffer.next_bodies[:,:-19]
+
+    nt = replay_buffer.bodies.shape[0]
+    true_rmat = replay_buffer.bodies[:,-16:].reshape(nt, 4,4)
+    true_posquat = [T.mat2pose(true_rmat[x]) for x in range(true_rmat.shape[0])]
+    true_pos = true_rmat[:,:3,3]
+    true_euler = np.array([T.mat2euler(a) for a in true_rmat])
+    true_quat = np.array([T.mat2quat(a) for a in true_rmat])
+    
+    if 'robot_dh' in replay_buffer.cfg['robot'].keys():
+        robot_name = replay_buffer.cfg['robot']['robot_dh']
+    else:
+        robot_name = replay_buffer.cfg['robot']['robots'][0]
+
+
+
+    rdh = robotDH(robot_name)
     bm = replay_buffer.base_matrix
-    f_eef = rdh.np_angle2ee(bm, joint_positions)
-    # do the rotation in the beginning rather than end
-    dh_pos = f_eef[:,:3,3] 
+    #bm = np.eye(4)
+    #bm[1,1] =-1
+    #bm[2,2] =-1
+
+    #pm = np.eye(4)
+    #pm[1,1] *=-1
+    #pm[2,2] *=-1
+    dh_rmat = rdh.np_angle2ee(bm, joint_positions)
+    dh_pos = dh_rmat[:,:3,3]#np.array([a[0] for a in dh_posquat])
+    dh_euler = np.array([T.mat2euler(a) for a in dh_rmat])
+    dh_quat = np.array([T.mat2quat(a) for a in dh_rmat])
+ 
+    #true_ = env.sim.data.get_body_xmat('gripper0_eef')
     #dh_ori = np.array([quaternion_from_matrix(f_eef[x]) for x in range(n)])
-    dh_ori = np.array([mat2quat(f_eef[x]) for x in range(f_eef.shape[0])])
+    #dh_ori = np.array([mat2quat(f_eef[x]) for x in range(f_eef.shape[0])])
     f, ax = plt.subplots(3, figsize=(10,18))
-    xdiff = rpos[:,0]-dh_pos[:,0]
-    ydiff = rpos[:,1]-dh_pos[:,1]
-    zdiff = rpos[:,2]-dh_pos[:,2]
+    xdiff = true_pos[:,0]-dh_pos[:,0]
+    ydiff = true_pos[:,1]-dh_pos[:,1]
+    zdiff = true_pos[:,2]-dh_pos[:,2]
     print('max xyzdiff', np.abs(xdiff).max(), np.abs(ydiff).max(), np.abs(zdiff).max())
-    ax[0].plot(rpos[:,0], label='state')
+    ax[0].plot(true_pos[:,0], label='state')
     ax[0].plot(dh_pos[:,0], label='dh calc')
     ax[0].plot(xdiff, label='diff')
     ax[0].set_title('posx: max diff %.04f'%np.abs(xdiff).max())
     ax[0].legend()
-    ax[1].plot(rpos[:,1])
+    ax[1].plot(true_pos[:,1])
     ax[1].plot(dh_pos[:,1])
     ax[1].plot(ydiff)
     ax[1].set_title('posy: max diff %.04f'%np.abs(ydiff).max())
-    ax[2].plot(rpos[:,2])
+    ax[2].plot(true_pos[:,2])
     ax[2].plot(dh_pos[:,2])
     ax[2].plot(zdiff)
     ax[2].set_title('posz: max diff %.04f'%np.abs(zdiff).max())
-    plt.savefig(savebase+'eef.png')
-    print('saving', savebase+'eef.png')
+    plt.savefig(savebase+'pos.png')
+    print('saving', savebase+'pos.png')
  
-    # TODO quaternion is still not right! the errors occur when i hit 1 or 0 - this must be a common thing
-    # CHECK DH parameters?
     f, ax = plt.subplots(4, figsize=(10,18))
-    qxdiff = rquat[:,0]-dh_ori[:,0]
-    qzdiff = rquat[:,2]-dh_ori[:,2]
-    qydiff = rquat[:,1]-dh_ori[:,1]
-    qwdiff = rquat[:,3]-dh_ori[:,3]
+    qxdiff = true_quat[:,0]-dh_quat[:,0]
+    qydiff = true_quat[:,1]-dh_quat[:,1]
+    qzdiff = true_quat[:,2]-dh_quat[:,2]
+    qwdiff = true_quat[:,3]-dh_quat[:,3]
     print('max qxyzwdiff',np.abs(qxdiff).max(), np.abs(qydiff).max(), np.abs(qzdiff).max(), np.abs(qwdiff).max())
-    ax[0].plot(rquat[:,0], label='sqx')
-    ax[0].plot(dh_ori[:,0], label='dhqx')
+    ax[0].plot(true_quat[:,0], label='sqx')
+    ax[0].plot(dh_quat[:,0], label='dhqx')
     ax[0].plot(qxdiff, label='diff')
     ax[0].set_title('qx: max diff %.04f'%np.abs(qxdiff).max())
     ax[0].legend()
-    ax[1].plot(rquat[:,1], label='sqy')
-    ax[1].plot(dh_ori[:,1], label='dhqy')
+    ax[1].plot(true_quat[:,1], label='sqy')
+    ax[1].plot(dh_quat[:,1], label='dhqy')
     ax[1].plot(qydiff)
     ax[1].set_title('qy: max diff %.04f'%np.abs(qydiff).max())
-    ax[2].plot(rquat[:,2], label='sqz')
-    ax[2].plot(dh_ori[:,2], label='dhqz')
+    ax[2].plot(true_quat[:,2], label='sqz')
+    ax[2].plot(dh_quat[:,2], label='dhqz')
     ax[2].plot(qzdiff)
     ax[2].set_title('qz: max diff %.04f'%np.abs(qzdiff).max())
-    ax[3].plot(rquat[:,3])
-    ax[3].plot(dh_ori[:,3])
+    ax[3].plot(true_quat[:,3])
+    ax[3].plot(dh_quat[:,3])
     ax[3].plot(qwdiff)
     ax[3].set_title('qw: max diff %.04f'%np.abs(qwdiff).max())
     plt.savefig(savebase+'quat.png')
     print('saving', savebase+'quat.png')
+
+    exdiff = true_euler[:,0]-dh_euler[:,0]
+    eydiff = true_euler[:,1]-dh_euler[:,1]
+    ezdiff = true_euler[:,2]-dh_euler[:,2]
+    print('max qxyzwdiff',np.abs(exdiff).max(), np.abs(eydiff).max(), np.abs(ezdiff).max())
+ 
+    f, ax = plt.subplots(3, figsize=(10,18))
+    ax[0].plot(true_euler[:,0], label='sqx')
+    ax[0].plot(dh_euler[:,0], label='dhqx')
+    ax[0].plot(exdiff, label='diff')
+    ax[0].legend()
+    ax[1].plot(true_euler[:,1])
+    ax[1].plot(dh_euler[:,1])
+    ax[1].plot(eydiff)
+    ax[2].plot(true_euler[:,2])
+    ax[2].plot(dh_euler[:,2])
+    ax[2].plot(ezdiff)
+    plt.savefig(savebase+'euler.png')
+
     if frames:
         frames = [replay_buffer.undo_frame_compression(replay_buffer.frames[f]) for f in np.arange(len(replay_buffer.frames))]
         mimwrite(savebase+'.mp4', frames)

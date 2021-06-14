@@ -5,9 +5,10 @@ DH params found by Yuying Blair Huang
 """
 # Params for Denavit-Hartenberg Reference Frame Layout (DH)
 jaco27DOF_DH_lengths = {'D1':0.2755, 'D2':0.2050, 
-               'D3':0.2050, 'D4':0.2073,
-               'D5':0.1038, 'D6':0.1038, 
-               'D7':0.1600, 'e2':0.0098}
+                        'D3':0.2050, 'D4':0.2073,
+                        'D5':0.1038, 'D6':0.1038, 
+                        'D7':0.1600, 'e2':0.0098, 'D_grip':0.1775} # .001775e2 is dist to grip site
+
 
  
 DH_attributes_jaco27DOF = {
@@ -21,7 +22,7 @@ DH_attributes_jaco27DOF = {
                     -jaco27DOF_DH_lengths['e2'], 
                     -(jaco27DOF_DH_lengths['D4']+jaco27DOF_DH_lengths['D5']), 
                     0, 
-                    -(jaco27DOF_DH_lengths['D6']+jaco27DOF_DH_lengths['D7']))
+                    -(jaco27DOF_DH_lengths['D6']+jaco27DOF_DH_lengths['D_grip']))
            }
 # Params for Denavit-Hartenberg Reference Frame Layout (DH)
 Panda_DH_lengths = {'D1':0.333, 'D2':0, 
@@ -93,10 +94,27 @@ DH_attributes_dm_reacher = {
      'DH_theta_offset':[0,0],
      'DH_d':[0,0]}
 
+DH_attributes_dm_reacher_long_wrist = {
+     'DH_a':[0.12,0.22], 
+     'DH_alpha':[0.0,0.0],
+     'DH_theta_sign':[1.0,1.0], 
+     'DH_theta_offset':[0,0],
+     'DH_d':[0,0]}
+
+DH_attributes_dm_reacher_double = {
+     'DH_a':[0.22,0.22], 
+     'DH_alpha':[0.0,0.0],
+     'DH_theta_sign':[1.0,1.0], 
+     'DH_theta_offset':[0,0],
+     'DH_d':[0,0]}
+
 
 
        
-robot_attributes = {'reacher':DH_attributes_dm_reacher, 
+robot_attributes = {
+                    'reacher':DH_attributes_dm_reacher, 
+                    'reacher_long_wrist':DH_attributes_dm_reacher_long_wrist, 
+                    'reacher_double':DH_attributes_dm_reacher_double, 
                     'Jaco':DH_attributes_jaco27DOF, 
                     'Baxter':DH_attributes_Baxter, 
                     'Sawyer':DH_attributes_Sawyer, 
