@@ -129,6 +129,11 @@ def train(data, step=0, n_epochs=1e7):
                     opt.step()
                     if args.learn_dh:
                         dh_opt.step()
+                        estimation_error_dict = robot_dh.get_dh_estimation_error()
+                        estimated_dh_params = robot_dh.get_estimated_dh_params()
+                        L.log('dh_estimation_error', estimation_error_dict, step)
+                        L.log('dh_estimated_params', estimated_dh_params, step)
+
                     if not step % (bs*10):
                         L.log('BC_loss', loss_dict, step)
                     step+=bs
@@ -152,7 +157,8 @@ def train(data, step=0, n_epochs=1e7):
     fbase = os.path.join(savebase, 'lstm_model_%010d'%(step))
     print('saving model', fbase)
     torch.save(model_dict, fbase+'.pt') 
- 
+
+
 def load_data(use_states=['position', 'to_target']):
     # ASSUMES DATA DOES NOT WRAP (IT DOESN"T IN EVAL)
     print('loading data from', args.load_replay)
@@ -365,7 +371,8 @@ if __name__ == '__main__':
     parser.add_argument('--max_timesteps', default=100, type=int)
     parser.add_argument('--alpha', default=2000, type=int)
     parser.add_argument('--drop_rot', default=False, action='store_true')
-    parser.add_argument('--noise', default=1, type=int)
+    parser.add_argument('--noise', default=1, type=float)
+    parser.add_argument('--dh_noise', default=0.1, type=float)
     parser.add_argument('--use_comet', action='store_true', default=False)
     args = parser.parse_args()
     seed = 323
@@ -418,7 +425,7 @@ if __name__ == '__main__':
     save_every_epochs = 100
 
     if args.learn_dh:
-        robot_dh = robotDHLearnable(robot_name=args.target_robot_name, device=device)
+        robot_dh = robotDHLearnable(robot_name=args.target_robot_name, dh_noise=args.dh_noise, device=device)
     else:
         robot_dh = robotDH(robot_name=args.target_robot_name, device=device)
 

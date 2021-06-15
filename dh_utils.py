@@ -243,6 +243,7 @@ def so3_rotation_angle(R, eps: float = 1e-4, cos_angle: bool = False):
         # pyre-fixme[16]: `float` has no attribute `acos`.
         return phi.acos()
 
+
 def mean_angle_btw_vectors(v1, v2, eps = 1e-4):
     # https://towardsdatascience.com/better-rotation-representation    s-for-accurate-pose-estimation-e890a7e1317f
     dot_product = torch.sum(v1*v2, axis=-1)
@@ -250,6 +251,7 @@ def mean_angle_btw_vectors(v1, v2, eps = 1e-4):
     cos_a = torch.clamp(cos_a, -1 + eps, 1 - eps)
     angle_dist = torch.acos(cos_a)
     return torch.mean(angle_dist)
+
 
 class robotDH():
     def __init__(self, robot_name, device='cpu'):
@@ -309,18 +311,19 @@ class robotDH():
 
 
 class robotDHLearnable(nn.Module):
-    def __init__(self, robot_name, device='cpu'):
+    def __init__(self, robot_name, dh_noise=0.1, device='cpu'):
         super().__init__()
-        learnable_params = ['DH_a']
         self.device = device
+        self.learnable_params = ['DH_a']
         self.robot_name = robot_name
-        self.dh_true = robot_attributes[self.robot_name]
+        self.npdh_true = robot_attributes[self.robot_name]
+        self.tdh_true = {}
         self.tdh = nn.ParameterDict({})
-        noise_std = 0.05
-        for key, item in self.dh_true.items():
-            if key in learnable_params:
-                param_noise = torch.normal(torch.zeros(len(item)), noise_std * torch.ones(len(item)))
-                self.tdh[key] = nn.Parameter(torch.FloatTensor(item) + param_noise, requires_grad=True)
+        for key, item in self.npdh_true.items():
+            self.tdh_true[key] = torch.FloatTensor(item).to(self.device)
+            if key in self.learnable_params:
+                param_noise = torch.normal(torch.zeros(len(item)), dh_noise * torch.ones(len(item)))
+                self.tdh[key] = nn.Parameter(torch.abs(torch.FloatTensor(item) + param_noise), requires_grad=True)
             else:
                 self.tdh[key] = nn.Parameter(torch.FloatTensor(item), requires_grad=False)
 
@@ -339,10 +342,28 @@ class robotDHLearnable(nn.Module):
 
     def torch_dh_transform(self, dh_index, angles):
         theta = self.tdh['DH_theta_sign'][dh_index] * angles + self.tdh['DH_theta_offset'][dh_index]
-        d = F.softplus(self.tdh['DH_d'][dh_index])
-        a = F.softplus(self.tdh['DH_a'][dh_index])
+        d = self.tdh['DH_d'][dh_index]
+        a = self.tdh['DH_a'][dh_index]
         alpha = self.tdh['DH_alpha'][dh_index]
         return torch_dh_transform(theta, d, a, alpha, self.device)
+
+    def get_dh_estimation_error(self):
+        error_dict = {}
+        mean_error = 0.
+        with torch.no_grad():
+            for k in self.learnable_params:
+                error_dict[k] = F.mse_loss(self.tdh[k], self.tdh_true[k]).item()
+                mean_error += error_dict[k]
+            mean_error /= len(self.learnable_params)
+            error_dict['mean'] = mean_error
+            return error_dict
+
+    def get_estimated_dh_params(self):
+        estimated_dh_dict = {}
+        for k in self.learnable_params:
+            for i in range(self.tdh[k].shape[0]):
+                estimated_dh_dict[f'{k}_j{i+1}'] = self.tdh[k][i].item()
+        return estimated_dh_dict
 
 
 # I"M NOT CONVINCED THESE WORK - 
