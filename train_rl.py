@@ -36,6 +36,9 @@ https://github.com/ARISE-Initiative/robosuite/blob/65d3b9ad28d6e7a006e9eef7c5a03
 """
 
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
 def eval_policy(env, policy, eval_episodes=10):
 
     avg_reward = 0.

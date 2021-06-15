@@ -358,7 +358,6 @@ if __name__ == '__main__':
     parser.add_argument('--force', default=False, action='store_true')
     parser.add_argument('--load_model', default='')
     parser.add_argument('--loss', default='DH', choices=['DH', 'angle'])
-    parser.add_argument('--device', default='cuda')
     parser.add_argument('--frames', action='store_true', default=False)
     parser.add_argument('--camera', default='')
     parser.add_argument('--num_eval_episodes', default=3, type=int)
@@ -407,10 +406,9 @@ if __name__ == '__main__':
         else:
             args.target_robot_name = cfg['robot']['robots'][0]
     print('target robot', args.target_robot_name)
-    cfg['robot']['robots'] = [args.target_robot_name] 
+    cfg['robot']['robots'] = [args.target_robot_name]
 
-     
-    device = args.device
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     results_dir = args.load_replay.replace('.pkl', '')
     # set random seed to 0
     noise_std = args.noise

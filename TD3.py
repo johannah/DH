@@ -9,6 +9,9 @@ from IPython import embed
 # Paper: https://arxiv.org/abs/1802.09477
 
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
 class Actor(nn.Module):
     def __init__(self, state_dim, action_dim, max_policy_action):
         super(Actor, self).__init__()
@@ -74,7 +77,6 @@ class TD3(object):
         policy_noise=0.2,
         noise_clip=0.5,
         policy_freq=2,
-        device='cpu',
         **kwargs
     ):
 
@@ -94,7 +96,7 @@ class TD3(object):
         self.critic = Critic(state_dim, action_dim).to(self.device)
         self.critic_target = copy.deepcopy(self.critic)
         self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=3e-4)
-
+d
         self.total_it = 0
 
 
