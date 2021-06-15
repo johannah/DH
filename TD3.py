@@ -158,8 +158,8 @@ class TD3(object):
 
             for param, target_param in zip(self.actor.parameters(), self.actor_target.parameters()):
                 target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
-        return critic_loss, actor_loss
-
+        #return critic_loss, actor_loss
+        return {'critic':critic_loss, 'actor':actor_loss}
 
     def save(self, filepath):
         model_dict =  {'critic':self.critic.state_dict(), 

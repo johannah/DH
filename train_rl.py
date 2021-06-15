@@ -67,10 +67,8 @@ def run_train(env, model, replay_buffer, kwargs, savedir, exp_name, start_timest
             state = next_state
             body = next_body
             if num_steps > start_timesteps:
-                critic_loss, actor_loss = policy.train(num_steps, replay_buffer, batch_size)
-                if actor_loss != 0:
-                    tb_writer.add_scalar('actor_loss', actor_loss, num_steps)
-                tb_writer.add_scalar('critic_loss', critic_loss, num_steps)
+                loss_dict = policy.train(num_steps, replay_buffer, batch_size)
+                tb_writer.add_scalar('loss', loss_dict, num_steps)
             if not num_steps % save_every:
                 step_filepath = os.path.join(savedir, '{}_{:010d}'.format(exp_name, num_steps))
                 policy.save(step_filepath+'.pt')

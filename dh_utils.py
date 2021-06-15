@@ -9,7 +9,7 @@ import math
 from datetime import datetime as date
 from glob import glob
 import torch
-from robosuite.utils.transform_utils import mat2quat
+import robosuite.utils.transform_utils as T
 from dh_parameters import robot_attributes
 from IPython import embed
 
@@ -271,10 +271,9 @@ class robotDH():
         _T = base_matrix
         for _a in range(fs):        
             _T1 = self.np_dh_transform(_a, angles[:,_a])
-            #for e in range(_T1.shape[0]):
-            #    if not np.allclose(np.dot(_T1[e].T, _T1[e]), np.identity(4)):
-            #        embed()
             _T = np.matmul(_T, _T1)
+            #print(_a, _T[0])
+            #print(T.mat2euler(_T[0]))
         return _T
 
     def torch_angle2ee(self, base_matrix, angles):
