@@ -39,14 +39,14 @@ https://github.com/ARISE-Initiative/robosuite/blob/65d3b9ad28d6e7a006e9eef7c5a03
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def eval_policy(env, policy, eval_episodes=10):
+def eval_policy(env, policy, kwargs, eval_episodes=10):
 
     avg_reward = 0.
     for _ in range(eval_episodes):
         done = False
         state, body = env.reset()
         while not done:
-            action = policy.select_action(np.array(state))
+            action = policy.select_action(np.array(state)).clip(-kwargs['max_action'], kwargs['max_action'])
             state, body, reward, done, _ = env.step(action)
             avg_reward += reward
 
@@ -109,7 +109,7 @@ def run_train(env, eval_env, policy, replay_buffer, kwargs, savedir, exp_name, s
                 policy.save(step_filepath+'.pt')
 
                 # evaluate
-                eval_reward = eval_policy(eval_env, policy, num_eval_episodes)
+                eval_reward = eval_policy(eval_env, policy, kwargs, num_eval_episodes)
                 evaluations.append(eval_reward)
                 L.log('eval_reward', eval_reward, num_steps)
                 np.save(f"{savedir}/evaluations", evaluations)

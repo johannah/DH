@@ -9,7 +9,7 @@ from IPython import embed
 # Paper: https://arxiv.org/abs/1802.09477
 
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cpu")
 
 
 class Actor(nn.Module):

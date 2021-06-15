@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --array=0-14
-#SBATCH --cpus-per-task=10               # Ask for 10 CPUs
-#SBATCH --gres=gpu:1                     # Ask for 1 GPU
+#SBATCH --cpus-per-task=20               # Ask for 10 CPUs
+#SBATCH --gres=gpu:0                     # Ask for 1 GPU
 #SBATCH --mem=32G                        # Ask for 32 GB of RAM
-#SBATCH --time=6:00:00                  # The job will run for 3 hours
+#SBATCH --time=10:00:00                  # The job will run for 3 hours
 #SBATCH -o /scratch/sahandr/DH-%j.out  # Write the log in $SCRATCH
 
 unset display

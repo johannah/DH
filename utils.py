@@ -419,6 +419,8 @@ def get_replay_state_dict(replay_buffer, use_states=[]):
 
 def parse_slurm_task_id(cfg, slurm_task_id, n_seeds=5):
     cfg['experiment']['seed'] += (slurm_task_id % n_seeds) * 3000
+    if cfg['robot']['robots'] == ['reacher']:
+        return cfg
     if slurm_task_id // n_seeds == 0:
         cfg['robot']['env_name'] = 'Door'
     elif slurm_task_id // n_seeds == 1:
