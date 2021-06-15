@@ -24,7 +24,7 @@ torch.set_num_threads(3)
 import TD3
 
 from dh_utils import seed_everything, normalize_joints, skip_state_keys
-from utils import build_replay_buffer, build_env, build_model, plot_replay, get_hyperparameters
+from utils import build_replay_buffer, build_env, build_model, plot_replay, get_hyperparameters, parse_slurm_task_id
 from logger import Logger
 from IPython import embed
 
@@ -259,7 +259,7 @@ if __name__ == '__main__':
     parser.add_argument('--max_eval_timesteps', default=100, type=int)
     parser.add_argument('--log_dir', default='', type=str, help="Overwrites the log_dir in the config file (Needed for CC).")
     parser.add_argument('--use_comet', action='store_true', default=False)
-
+    parser.add_argument('--slurm_task_id', default=-1, type=int)
     args = parser.parse_args()
     # keys that are robot specific
     
@@ -267,6 +267,8 @@ if __name__ == '__main__':
         rollout()
     else:
         cfg = json.load(open(args.cfg))
+        if args.slurm_task_id != -1:
+            cfg = parse_slurm_task_id(cfg, args.slurm_task_id)
         print(cfg)
         seed_everything(cfg['experiment']['seed'])
         random_state = np.random.RandomState(cfg['experiment']['seed'])

@@ -1,4 +1,5 @@
 #!/bin/bash
+#SBATCH --array=0-14
 #SBATCH --cpus-per-task=10               # Ask for 10 CPUs
 #SBATCH --gres=gpu:1                     # Ask for 1 GPU
 #SBATCH --mem=32G                        # Ask for 32 GB of RAM
@@ -19,10 +20,9 @@ export MUJOCO_GL="egl"
 # tar -xvf $SLURM_TMPDIR/reacher_experiments.tar -C $SLURM_TMPDIR/
 
 # config
-config="base_dm.cfg"
-load_replay="base_easy_01111_reacher_1_00"
+config="base_jaco_OSC.cfg"
 
-python $HOME/workspace/DH/train_rl.py --cfg $HOME/workspace/DH/experiments/${config} --log_dir $SLURM_TMPDIR/DH_logs/ --use_comet
+python $HOME/workspace/DH/train_rl.py --cfg $HOME/workspace/DH/experiments/${config} --log_dir $SLURM_TMPDIR/DH_logs/ --use_comet --slurm_task_id $SLURM_ARRAY_TASK_ID
 # python $HOME/workspace/DH/train_bc.py --load_replay $SLURM_TMPDIR/collate_reacher/${load_replay} --use_comet
 
 
