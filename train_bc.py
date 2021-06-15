@@ -24,7 +24,7 @@ import torch.nn.init as init
 import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
 
-from utils import build_env, build_model, build_replay_buffer, plot_replay, get_replay_state_dict
+from utils import build_env, build_model, build_replay_buffer, plot_replay, get_replay_state_dict, get_hyperparameters
 from replay_buffer import compress_frame
 from dh_utils import find_latest_checkpoint, create_results_dir, skip_state_keys, mean_angle_btw_vectors, so3_relative_angle
 from dh_utils import robotDH, robotDHLearnable, seed_everything, normalize_joints
@@ -456,6 +456,8 @@ if __name__ == '__main__':
     else:
         pickle.dump(data, open(savebase+'_data.pkl', 'wb'))
         L = Logger(savebase, use_tb=True, use_comet=args.use_comet, project_name="DH")
+        hyperparameters = get_hyperparameters(args, cfg)
+        L.log_hyper_params(hyperparameters)
         # use LBFGS as optimizer since we can load the whole data to train
         opt = optim.Adam(lstm.parameters(), lr=0.0001)
         if args.learn_dh:

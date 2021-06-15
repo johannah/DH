@@ -24,7 +24,7 @@ torch.set_num_threads(3)
 import TD3
 
 from dh_utils import seed_everything, normalize_joints, skip_state_keys
-from utils import build_replay_buffer, build_env, build_model, plot_replay
+from utils import build_replay_buffer, build_env, build_model, plot_replay, get_hyperparameters
 from logger import Logger
 from IPython import embed
 
@@ -62,6 +62,9 @@ def run_train(env, eval_env, policy, replay_buffer, kwargs, savedir, exp_name, s
               eval_freq, num_steps=0, max_timesteps=2000, use_frames=False, expl_noise=0.1,
               batch_size=128, num_eval_episodes=10):
     L = Logger(savedir, use_tb=True, use_comet=args.use_comet, project_name="DH")
+    hyperparameters = get_hyperparameters(args, cfg)
+    L.log_hyper_params(hyperparameters)
+
     evaluations = []
     steps = 0
     while num_steps < max_timesteps:

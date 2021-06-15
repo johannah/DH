@@ -391,6 +391,14 @@ def build_replay_buffer(cfg, env, max_size, cam_dim, seed):
     replay_buffer.base_matrix = env.base_matrix
     return replay_buffer
 
+
+def get_hyperparameters(args, cfg):
+    hyperparameters = vars(args)
+    for k, v in cfg.items():
+        if isinstance(v, dict):
+            hyperparameters.update(v)
+    return hyperparameters
+
 def get_replay_state_dict(replay_buffer, use_states=[]):
     # find eef position according to DH
     n, ss = replay_buffer.states.shape
