@@ -20,7 +20,7 @@ from replay_buffer import ReplayBuffer, compress_frame
 from torch.utils.tensorboard import SummaryWriter
 import torch
 import robosuite.utils.macros as macros
-torch.set_num_threads(3)
+# torch.set_num_threads(3)
 import TD3
 
 from dh_utils import seed_everything, normalize_joints, skip_state_keys

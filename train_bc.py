@@ -16,7 +16,7 @@ from pathlib import Path
 
 
 import torch
-torch.set_num_threads(2)
+# torch.set_num_threads(2)
 import torch.nn as nn
 from torch.nn.utils import clip_grad_norm_
 import torch.optim as optim
