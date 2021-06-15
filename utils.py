@@ -27,7 +27,8 @@ from robosuite.utils.transform_utils import mat2quat
 
 from dm_control import suite
 
-import TD3, TD3_kinematic
+# import TD3, TD3_kinematic
+import TD3
 from replay_buffer import ReplayBuffer, compress_frame
 from dh_utils import robotDH, quaternion_matrix, quaternion_from_matrix, robot_attributes, normalize_joints
 
