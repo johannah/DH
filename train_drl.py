@@ -67,9 +67,30 @@ def jaco_door_kinematic_fn(action, state, prev_body, body):
     return eef_pos, handle_pos
 
 
-def run_train(env, model, replay_buffer, kwargs, savedir, exp_name, start_timesteps, save_every, num_steps=0, max_timesteps=2000, use_frames=False, expl_noise=0.1, batch_size=128):
+def eval_policy(eval_env, policy, kwargs, eval_episodes=10):
+
+    total_rewards = [] 
+    for _ in range(eval_episodes):
+        done = False
+        state, body = eval_env.reset()
+        ep_reward = 0
+        while not done:
+            action = policy.select_action(np.array(state)).clip(-kwargs['max_action'], kwargs['max_action'])
+            state, body, reward, done, _ = eval_env.step(action)
+            ep_reward += reward
+        print(ep_reward)
+        total_rewards.append(ep_reward)
+    avg_reward = np.mean(total_rewards)
+
+    print("---------------------------------------")
+    print(f"Evaluation over {eval_episodes} episodes: {avg_reward:.3f}")
+    print("---------------------------------------")
+    return total_rewards 
+
+def run_train(env, eval_env, model, replay_buffer, kwargs, savedir, exp_name, start_timesteps, eval_freq, num_steps=0, max_timesteps=2000, use_frames=False, expl_noise=0.1, batch_size=128, num_eval_episodes=10):
     tb_writer = SummaryWriter(savedir)
     steps = 0
+    evaluations = []
     while num_steps < max_timesteps:
         #ts, reward, d, o = env.reset()
         done = False
@@ -114,9 +135,15 @@ def run_train(env, model, replay_buffer, kwargs, savedir, exp_name, start_timest
             #if num_steps > 2000:
                 loss_dict = policy.train(num_steps, replay_buffer, batch_size=batch_size)
                 tb_writer.add_scalars('DRLloss', loss_dict, num_steps)
-            if not num_steps % save_every:
+            if not num_steps % eval_freq:
                 step_filepath = os.path.join(savedir, '{}_{:010d}'.format(exp_name, num_steps))
                 policy.save(step_filepath+'.pt')
+                # evaluate
+                eval_rewards = eval_policy(eval_env, policy, kwargs, num_eval_episodes)
+                evaluations.append(eval_rewards)
+                tb_writer.add_scalar('eval', np.mean(eval_rewards), num_steps)
+                np.save(f"{savedir}/evaluations", evaluations)
+
             num_steps+=1
             e_step+=1
         tb_writer.add_scalar('train_reward', ep_reward, num_steps)
@@ -287,6 +314,8 @@ if __name__ == '__main__':
         seed_everything(cfg['experiment']['seed'])
         random_state = np.random.RandomState(cfg['experiment']['seed'])
         env = build_env(cfg['robot'], cfg['robot']['frame_stack'], skip_state_keys=skip_state_keys, env_type=env_type, default_camera=args.camera)
+        eval_env = build_env(cfg['robot'], cfg['robot']['frame_stack'], skip_state_keys=skip_state_keys,
+                             env_type=cfg['experiment']['env_type'], default_camera=args.camera)
         savedir = make_savedir(cfg)
         policy, kwargs = build_model(cfg['experiment']['policy_name'], env, cfg)
         replay_buffer = build_replay_buffer(cfg, env, cfg['experiment']['replay_buffer_size'], cam_dim=(0,0,0), seed=cfg['experiment']['seed'])
@@ -303,5 +332,5 @@ if __name__ == '__main__':
             print("setting kinematic function", kinematic_fn)
             policy.kinematic_fn = eval(kinematic_fn)
  
-        run_train(env, policy, replay_buffer, kwargs, savedir, cfg['experiment']['exp_name'], cfg['experiment']['start_training'], cfg['experiment']['eval_freq'], num_steps=0, max_timesteps=cfg['experiment']['max_timesteps'], expl_noise=cfg['experiment']['expl_noise'], batch_size=cfg['experiment']['batch_size'])
+        run_train(env, eval_env, policy, replay_buffer, kwargs, savedir, cfg['experiment']['exp_name'], cfg['experiment']['start_training'], cfg['experiment']['eval_freq'], num_steps=0, max_timesteps=cfg['experiment']['max_timesteps'], expl_noise=cfg['experiment']['expl_noise'], batch_size=cfg['experiment']['batch_size'], num_eval_episodes=cfg['experiment']['n_eval_episodes'])
 
