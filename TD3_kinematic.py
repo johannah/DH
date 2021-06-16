@@ -147,6 +147,7 @@ class TD3(object):
 
         # Delayed policy updates
         actor_loss = 0
+        kine_loss = 0
         if self.total_it % self.policy_freq == 0:
             # DO DH
             _next_action = self.actor_target(next_state)#.clamp(-self.max_policy_action, self.max_policy_action)
