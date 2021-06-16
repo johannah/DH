@@ -57,14 +57,23 @@ def jaco_door_kinematic_fn(action, state, prev_body, body):
 
     handle_rot = body[:,29:].reshape(bs, 4, 4)
     handle_pos = torch.FloatTensor(handle_rot[:,:3,3])
-    #gripper_to_handle = handle_pos-handle_rot
- 
-    #gripper_to_handle = 
-    #dist = np.linalg.norm(gripper_to_handle)
-    #reaching_reward = 0.25 * (1 - np.tanh(10.0 * dist))
-    ## obs is position, to_target, velocity
-    #target_pos = eef_pos.detach() + state[:,2:4]
     return eef_pos, handle_pos
+
+def jaco_kinematic_fn(action, state, prev_body, body):
+    # last dim is gripper
+    bs = action.shape[0]
+    n_joints = len(robot_dh.npdh['DH_a'])
+    # turn relative action to abs action
+    joint_position = action[:, :n_joints] + torch.FloatTensor(prev_body[:, :n_joints])
+    bm = np.eye(4)
+    bm[:3, :3] = get_rot_mat(alpha=0., beta=np.pi, gamma=np.pi)
+    eef_rot = robot_dh.torch_angle2ee(robot_dh.base_matrix, joint_position)
+    eef_pos = eef_rot[:,:3,3]
+
+    handle_rot = body[:,29:].reshape(bs, 4, 4)
+    handle_pos = torch.FloatTensor(handle_rot[:,:3,3])
+    return eef_pos, handle_pos
+
 
 
 def eval_policy(eval_env, policy, kwargs, eval_episodes=10):
