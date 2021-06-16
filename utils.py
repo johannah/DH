@@ -9,6 +9,7 @@ from collections import deque
 import numpy as np
 import scipy.linalg as sp_la
 from imageio import mimwrite
+from pathlib import Path
 
 import torch
 import torch.nn as nn
@@ -417,7 +418,8 @@ def get_replay_state_dict(replay_buffer, use_states=[]):
     return state_data, next_state_data
 
 
-def parse_slurm_task_id(cfg, slurm_task_id, n_seeds=5):
+def parse_slurm_task_rl(cfg, slurm_task_id, n_seeds=5):
+    assert slurm_task_id != -1
     cfg['experiment']['seed'] += (slurm_task_id % n_seeds) * 3000
     if cfg['experiment']['env_type'] == 'robosuite':
         if slurm_task_id // n_seeds == 0:
@@ -428,6 +430,12 @@ def parse_slurm_task_id(cfg, slurm_task_id, n_seeds=5):
             cfg['robot']['env_name'] = 'NutAssembly'
     else:
         return cfg
+
+
+def parse_slurm_task_bc(root_dir, slurm_task_id):
+    assert slurm_task_id != -1
+    files = sorted(Path(root_dir).glob("**/*_eval_*.pkl"))
+    return str(files[slurm_task_id])
 
 
 def plot_replay(env, replay_buffer, savebase, frames=False):

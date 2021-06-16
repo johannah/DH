@@ -24,7 +24,7 @@ import robosuite.utils.macros as macros
 import TD3
 
 from dh_utils import seed_everything, normalize_joints, skip_state_keys
-from utils import build_replay_buffer, build_env, build_model, plot_replay, get_hyperparameters, parse_slurm_task_id
+from utils import build_replay_buffer, build_env, build_model, plot_replay, get_hyperparameters, parse_slurm_task_rl
 from logger import Logger
 from IPython import embed
 
@@ -268,7 +268,7 @@ if __name__ == '__main__':
     else:
         cfg = json.load(open(args.cfg))
         if args.slurm_task_id != -1:
-            cfg = parse_slurm_task_id(cfg, args.slurm_task_id)
+            cfg = parse_slurm_task_rl(cfg, args.slurm_task_id)
         print(cfg)
         seed_everything(cfg['experiment']['seed'])
         random_state = np.random.RandomState(cfg['experiment']['seed'])

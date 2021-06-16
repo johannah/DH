@@ -24,7 +24,7 @@ import torch.nn.init as init
 import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
 
-from utils import build_env, build_model, build_replay_buffer, plot_replay, get_replay_state_dict, get_hyperparameters
+from utils import build_env, build_model, build_replay_buffer, plot_replay, get_replay_state_dict, get_hyperparameters, parse_slurm_task_bc
 from replay_buffer import compress_frame
 from dh_utils import find_latest_checkpoint, create_results_dir, skip_state_keys, mean_angle_btw_vectors, so3_relative_angle
 from dh_utils import robotDH, robotDHLearnable, seed_everything, normalize_joints
@@ -167,7 +167,7 @@ def load_data(use_states=['position', 'to_target']):
     starts = np.array(replay.episode_start_steps[:-1], dtype=np.int)
     random_state.shuffle(starts)
  
-    max_ts = int(min([replay.max_timesteps, args.max_timesteps]))
+    max_ts = int(replay.max_timesteps)
     # bodies is joint_angles + world eef_pos + rotation in base
     j_size = replay.next_bodies.shape[1]-19
     # action is joint_diff
@@ -313,7 +313,7 @@ def run_BC_eval(env, replay_buffer, cfg, cam_dim, savebase):
             #ex_trace = data['train']['states'][:,0:1]
             #ex_action = data['train']['actions'][:,0]
             switch = False
-            while not done and e_step < args.max_timesteps:
+            while not done:
                 # Select action randomly or according to policy
                 # TODO select state names properly this only works for reacher
                 base_x[e_step] = torch.FloatTensor(state[:4])
@@ -332,8 +332,6 @@ def run_BC_eval(env, replay_buffer, cfg, cam_dim, savebase):
                 env.sim.data.qpos[:len(pred_action)] = body[:-19]+pred_action
                 action = np.zeros_like(action)
                 next_state, next_body, reward, done, info = env.step(action)  
-                if e_step > args.max_timesteps:
-                    done = True
 
                 ep_reward += reward
                 if use_frames:
@@ -368,18 +366,23 @@ if __name__ == '__main__':
     parser.add_argument('--camera', default='')
     parser.add_argument('--num_eval_episodes', default=3, type=int)
     parser.add_argument('--learning_rate', default=0.0001, type=float)
-    parser.add_argument('--max_timesteps', default=100, type=int)
     parser.add_argument('--alpha', default=2000, type=int)
     parser.add_argument('--drop_rot', default=False, action='store_true')
     parser.add_argument('--noise', default=1, type=float)
     parser.add_argument('--dh_noise', default=0.1, type=float)
     parser.add_argument('--use_comet', action='store_true', default=False)
+    parser.add_argument('--slurm_task_id', default=-1, type=int)
     args = parser.parse_args()
     seed = 323
     seed_everything(seed)
     random_state = np.random.RandomState(seed)
     # some keys are robot-specifig!
-    # TODO log where data was trained 
+    # TODO log where data was trained
+
+    if args.slurm_task_id != -1:
+        # overwrites args.load_replay to make the rest of script unchanged
+        slurm_load_replay = parse_slurm_task_bc(args.load_replay, args.slurm_task_id)
+        args.load_replay = slurm_load_replay
 
     if args.load_model != '':
         if os.path.isdir(args.load_model):
@@ -392,16 +395,24 @@ if __name__ == '__main__':
 
         agent_load_dir = os.path.split(os.path.split(os.path.split(load_dir)[0])[0])[0]
         args.load_replay = os.path.split(os.path.split(load_dir)[0])[0]+'.pkl'
-    else: 
+    else:
         agent_load_dir, fname = os.path.split(args.load_replay)
         _, ddir = os.path.split(agent_load_dir)
-        exp_name = 'BC_state_%s_lr%s_TS%s_N%s_ROT%s'%(args.loss, args.learning_rate, args.max_timesteps, args.noise, int(not args.drop_rot))
+        exp_name = 'BC_state_%s_lr%s_N%s_ROT%s'%(args.loss, args.learning_rate, args.noise, int(not args.drop_rot))
 
     agent_cfg_path = os.path.join(agent_load_dir, 'cfg.txt')
     print('cfg', agent_cfg_path)
     if not os.path.exists(agent_cfg_path):
         agent_cfg_path = os.path.join(agent_load_dir, 'cfg.cfg')
     cfg = json.load(open(agent_cfg_path))
+
+    # Sahand: dirty hack to retrieve the correct seed the RL was trained on
+    # Because I forgot to save the updated cfg after the SLURM task change in train_rl.py
+    slurm_rl_args_path = os.path.join(agent_load_dir, 'args.json')
+    if os.path.exists(slurm_rl_args_path):
+        slurm_rl_args = json.load(open(slurm_rl_args_path))
+        cfg['experiment']['seed'] = slurm_rl_args['seed']
+
     cfg['experiment']['target_robot_name'] = args.target_robot_name
     cfg['experiment']['bc_seed'] = cfg['experiment']['seed'] + random_state.randint(10000)
     cfg['robot']['controller'] = "JOINT_POSITION" 
