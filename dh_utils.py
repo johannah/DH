@@ -322,10 +322,10 @@ class robotDHLearnable(nn.Module):
         for key, item in self.npdh_true.items():
             self.tdh_true[key] = torch.FloatTensor(item).to(self.device)
             if key in self.learnable_params:
-                param_noise = torch.normal(torch.zeros(len(item)), dh_noise * torch.ones(len(item)))
-                self.tdh[key] = nn.Parameter(torch.abs(torch.FloatTensor(item) + param_noise), requires_grad=True)
+                param_noise = torch.normal(torch.zeros(len(item)), dh_noise * torch.ones(len(item))).to(device)
+                self.tdh[key] = nn.Parameter(torch.abs(torch.FloatTensor(item).to(device) + param_noise), requires_grad=True)
             else:
-                self.tdh[key] = nn.Parameter(torch.FloatTensor(item), requires_grad=False)
+                self.tdh[key] = nn.Parameter(torch.FloatTensor(item).to(device), requires_grad=False)
 
     def torch_angle2ee(self, base_matrix, angles):
         """
