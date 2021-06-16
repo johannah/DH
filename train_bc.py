@@ -388,7 +388,7 @@ if __name__ == '__main__':
         assert args.slurm_task_id != -1, "Transfer is only working for reacher on CC"
         assert args.target_robot_name in ['double', 'long_wrist']
         slurm_load_replay, slurm_load_model = parse_slurm_task_transfer(args.load_replay, args.slurm_task_id,
-                                                                        args.learn_dh, args.target_task)
+                                                                        args.learn_dh, args.target_robot_name)
         args.load_replay = slurm_load_replay
         args.load_model = slurm_load_model
 
@@ -396,6 +396,7 @@ if __name__ == '__main__':
         _, ddir = os.path.split(agent_load_dir)
         exp_name = 'Transfer_state_%s_lr%s_N%s_ROT%s_learnDH%s' % (args.loss, args.learning_rate, args.noise,
                                                                    int(not args.drop_rot), int(args.learn_dh))
+        args.target_robot_name = 'reacher_' + args.target_robot_name
 
     else:
         if args.slurm_task_id != -1:
@@ -492,6 +493,8 @@ if __name__ == '__main__':
     if args.eval:
         setup_eval()
     else:
+        if args.transfer:
+            step = 0
         pickle.dump(data, open(savebase+'_data.pkl', 'wb'))
         L = Logger(savebase, use_tb=True, use_comet=args.use_comet, project_name="DH")
         hyperparameters = get_hyperparameters(args, cfg)

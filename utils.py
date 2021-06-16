@@ -473,9 +473,9 @@ def parse_slurm_task_transfer(root_dir, slurm_task_id, learn_dh, target_task, n_
     replay_buffer_path = str(replay_files[slurm_task_id])
 
     bc_experiment_to_load = sorted(Path(root_dir).glob("*/"))[slurm_task_id]
-    model_path = sorted(bc_experiment_to_load.glob(f"**/*_DH_*_learnDH{int(learn_dh)}_*/lstm_*_.pt"))[-1]
+    model_path = sorted(bc_experiment_to_load.glob(f"**/*_DH_*_learnDH{int(learn_dh)}_*/lstm_*.pt"))[-1]
 
-    return replay_buffer_path, model_path
+    return str(replay_buffer_path), str(model_path)
 
 
 def plot_replay(env, replay_buffer, savebase, frames=False):
