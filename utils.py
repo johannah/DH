@@ -34,6 +34,7 @@ from dh_utils import robotDH, quaternion_matrix, quaternion_from_matrix, robot_a
 
 from IPython import embed; 
 
+MAX_RELATIVE_ANGLE = np.pi/16
 
 class eval_mode(object):
     def __init__(self, *models):
@@ -264,12 +265,10 @@ class EnvStack():
             # TODO hardcoded arm debug reacher
             bxqs = self.env.physics.data.qpos
             for t in self.xpos_targets:
-                pos_in_world = self.env.physics.named.data.xpos[t]
-                rot_in_world = self.env.physics.named.data.xmat[t].reshape((3, 3))
+                pos_in_world = self.env.physics.named.data.geom_xpos[t]
+                rot_in_world = self.env.physics.named.data.geom_xmat[t].reshape((3, 3))
                 targ_rmat = T.make_pose(pos_in_world, rot_in_world).reshape(16)
-            #targ_rmat = dm_site_pose_in_base_from_name(self, self.env.physics, "arm", self.xpos_target).reshape(16)
-            #targ_rmat = self.env.physics.named.data.geom_xmat[self.xpos_target].reshape(16)
-                bxqs = np.hstack((bxqs, self.env.physics.named.data.xpos[t], targ_rmat))
+                bxqs = np.hstack((bxqs, pos_in_world, targ_rmat))
         if self.env_type == 'robosuite':
             r = self.env.robots[0]
             bxqs = r._joint_positions
@@ -349,12 +348,20 @@ def build_env(cfg, k, skip_state_keys, env_type='robosuite', default_camera=''):
 
 
 
-def build_model(policy_name, env):
+def build_model(policy_name, env, cfg):
     state_dim = env.observation_space.shape[0]
     action_dim = env.control_shape
     body_dim = env.body_shape
-    max_action = env.control_max
-    min_action = env.control_min
+    max_action = env.control_max 
+    min_action = env.control_min 
+    if 'controller_config_file' in cfg['robot'].keys():
+        cfg_file = os.path.abspath(cfg['robot']['controller_config_file'])
+        print('loading controller from', cfg_file)
+        controller_configs = robosuite.load_controller_config(custom_fpath=cfg_file)
+        # 1 for open/close gripper
+        min_action = -np.hstack((controller_configs['MIN_MAX_DIFF'], [1]))
+        max_action =  np.hstack((controller_configs['MIN_MAX_DIFF'], [1]))
+ 
     if policy_name == 'TD3':
         kwargs = {'tau':0.005, 
                 'action_dim':action_dim, 'state_dim':state_dim, 'body_dim':body_dim,
@@ -365,7 +372,7 @@ def build_model(policy_name, env):
     if policy_name == 'TD3_kinematic':
         kwargs = {'tau':0.005, 
                 'action_dim':action_dim, 'state_dim':state_dim, 'body_dim':body_dim,
-                'policy_noise':0.2, 'max_policy_action':1.0, 
+                'policy_noise':0.2, 'max_policy_action':max_action, 
                 'noise_clip':0.5, 'policy_freq':2, 
                 'discount':0.99, 'max_action':max_action, 'min_action':min_action}
         policy = TD3_kinematic.TD3(**kwargs)
@@ -449,7 +456,7 @@ def plot_replay(env, replay_buffer, savebase, frames=False):
         robot_name = replay_buffer.cfg['robot']['robots'][0]
 
     rdh = robotDH(robot_name)
-    bm = np.eye(4)
+    bm = replay_buffer.base_matrix
     if robot_name == 'Jaco':
         bm = np.eye(4)
         bm[:3, :3] = get_rot_mat(alpha=0., beta=np.pi, gamma=np.pi)          

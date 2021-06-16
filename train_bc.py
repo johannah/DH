@@ -21,7 +21,7 @@ import torch.nn.init as init
 import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
 
-from utils import build_env, build_model, build_replay_buffer, plot_replay, get_replay_state_dict
+from utils import build_env, build_replay_buffer, plot_replay, get_replay_state_dict
 from replay_buffer import compress_frame
 from dh_utils import find_latest_checkpoint, create_results_dir, skip_state_keys, mean_angle_btw_vectors, so3_relative_angle
 from dh_utils import robotDH, seed_everything, normalize_joints

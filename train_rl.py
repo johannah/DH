@@ -180,7 +180,7 @@ def rollout():
         eval_replay_buffer_size =  int(min([env.max_timesteps, args.max_eval_timesteps])*args.num_eval_episodes)
     print('running eval for %s steps'%eval_replay_buffer_size)
  
-    policy,  kwargs = build_model(cfg['experiment']['policy_name'], env)
+    policy,  kwargs = build_model(cfg['experiment']['policy_name'], env, cfg)
     savebase = load_model.replace('.pt','_eval_%06d_S%06d'%(eval_replay_buffer_size, eval_seed))
     replay_file = savebase+'.pkl' 
     movie_file = savebase+'_%s.mp4' %args.camera
@@ -223,7 +223,7 @@ if __name__ == '__main__':
         random_state = np.random.RandomState(cfg['experiment']['seed'])
         env = build_env(cfg['robot'], cfg['robot']['frame_stack'], skip_state_keys=skip_state_keys, env_type=cfg['experiment']['env_type'], default_camera=args.camera)
         savedir = make_savedir(cfg)
-        policy, kwargs = build_model(cfg['experiment']['policy_name'], env)
+        policy, kwargs = build_model(cfg['experiment']['policy_name'], env, cfg)
 
         replay_buffer = build_replay_buffer(cfg, env, cfg['experiment']['replay_buffer_size'], cam_dim=(0,0,0), seed=cfg['experiment']['seed'])
  

@@ -30,22 +30,26 @@ eef_rot_offset?
 https://github.com/ARISE-Initiative/robosuite/blob/fc3738ca6361db73376e4c9d8a09b0571167bb2d/robosuite/models/robots/manipulators/manipulator_model.py
 https://github.com/ARISE-Initiative/robosuite/blob/65d3b9ad28d6e7a006e9eef7c5a0330816483be4/robosuite/environments/manipulation/single_arm_env.py#L41
 """
-def reacher_kinematic_fn(action, state, body):
+def reacher_kinematic_fn(action, state, prev_body, body):
     bs,fs = action.shape
+    n_joints = len(robot_dh.npdh['DH_a'])
     # turn relative action to abs action
-    joint_position = action+torch.FloatTensor(body[:,:fs])
+    joint_position = action+torch.FloatTensor(prev_body[:,:n_joints])
     eef_rot = robot_dh.torch_angle2ee(robot_dh.base_matrix, joint_position)
     # obs is position, to_target, velocity
     eef_pos = eef_rot[:,:2,3]
-    target_pos = eef_pos.detach() + state[:,2:4]
+    st_target = n_joints+19+3
+    target_pos = body[:,st_target:st_target+16].reshape(bs, 4, 4)[:,:2,3]
+    target_pos = torch.FloatTensor(target_pos)
     return eef_pos, target_pos
 
-def jaco_door_kinematic_fn(action, state, body):
+
+def jaco_door_kinematic_fn(action, state, prev_body, body):
     # last dim is gripper
     bs = action.shape[0]
     n_joints = len(robot_dh.npdh['DH_a'])
     # turn relative action to abs action
-    joint_position = action[:, :n_joints] + torch.FloatTensor(body[:, :n_joints])
+    joint_position = action[:, :n_joints] + torch.FloatTensor(prev_body[:, :n_joints])
     bm = np.eye(4)
     bm[:3, :3] = get_rot_mat(alpha=0., beta=np.pi, gamma=np.pi)
     eef_rot = robot_dh.torch_angle2ee(robot_dh.base_matrix, joint_position)
@@ -85,7 +89,7 @@ def run_train(env, model, replay_buffer, kwargs, savedir, exp_name, start_timest
                     ).clip(-kwargs['max_action'], kwargs['max_action'])
      
  
-            if robot_name == 'reacher':
+            if env_type == 'dm_control':
                 # we are working on joint position and don't have a joint position controller
                 target_joint_position = body[:len(action)] + action
                 env.sim.data.qpos[:len(action)] = target_joint_position
@@ -107,8 +111,9 @@ def run_train(env, model, replay_buffer, kwargs, savedir, exp_name, start_timest
             state = next_state
             body = next_body
             if num_steps > start_timesteps:
+            #if num_steps > 2000:
                 loss_dict = policy.train(num_steps, replay_buffer, batch_size=batch_size)
-                tb_writer.add_scalars('loss', loss_dict, num_steps)
+                tb_writer.add_scalars('DRLloss', loss_dict, num_steps)
             if not num_steps % save_every:
                 step_filepath = os.path.join(savedir, '{}_{:010d}'.format(exp_name, num_steps))
                 policy.save(step_filepath+'.pt')
@@ -140,6 +145,8 @@ def make_savedir(cfg):
 
 def run_eval(env, policy, replay_buffer, kwargs, cfg, cam_dim, savebase):
     robot_name = cfg['robot']['robots'][0]
+
+    env_type = cfg['experiment']['env_type']
     num_steps = 0
     total_steps = replay_buffer.max_size-1
     use_frames = cam_dim[0] > 0
@@ -150,18 +157,13 @@ def run_eval(env, policy, replay_buffer, kwargs, cfg, cam_dim, savebase):
     torques = []
     rewards = []
     while num_steps < total_steps:
-        #ts, reward, d, o = env.reset()
         done = False
         state, body =  env.reset()
         if use_frames:
             frame_compressed = compress_frame(env.render(camera_name=args.camera, height=h, width=w))
         ep_reward = 0
         e_step = 0
-
-        # IT SEEMS LIKE BASE_POS DOESNT CHANGE for DOOR/Jaco - will need to change things up if it does
-        #print(env.env.robots[0].base_pos)
-        #print(env.env.robots[0].base_ori)
-        while not done and e_step < args.max_eval_timesteps:
+        while not done:# and e_step < args.max_eval_timesteps:
             # Select action randomly or according to policy
             action = (
                     policy.select_action(state)
@@ -175,8 +177,8 @@ def run_eval(env, policy, replay_buffer, kwargs, cfg, cam_dim, savebase):
             else:
                 next_state, next_body, reward, done, info = env.step(action) # take a random action
             ep_reward += reward
-            if e_step+1 == args.max_eval_timesteps:
-                done = True
+            #if e_step+1 == args.max_eval_timesteps:
+            #    done = True
             if use_frames:
                 next_frame_compressed = compress_frame(env.render(camera_name=args.camera, height=h, width=w))
                 replay_buffer.add(state, body, action, reward, next_state, next_body, done, 
@@ -185,7 +187,9 @@ def run_eval(env, policy, replay_buffer, kwargs, cfg, cam_dim, savebase):
                 frame_compressed = next_frame_compressed
             else:
                 replay_buffer.add(state, body, action, reward, next_state, next_body, done)
-            #torques.append(env.env.robots[0].torques)
+            torques.append(env.env.robots[0].torques)
+            print(action)
+            print(torques[-1])
             state = next_state
             body = next_body
             num_steps+=1
@@ -221,7 +225,8 @@ def rollout():
             robot_dh_name = cfg['robot']['robots'][0]
 
 
-    env = build_env(cfg['robot'], cfg['robot']['frame_stack'], skip_state_keys=skip_state_keys, env_type=cfg['experiment']['env_type'], default_camera=args.camera)
+    env_type = cfg['experiment']['env_type']
+    env = build_env(cfg['robot'], cfg['robot']['frame_stack'], skip_state_keys=skip_state_keys, env_type=env_type, default_camera=args.camera)
     if 'eval_seed' in cfg['experiment'].keys():
         eval_seed = cfg['experiment']['eval_seed'] + 1000
     else:
@@ -233,11 +238,13 @@ def rollout():
     if 'eval_replay_buffer_size' in cfg['experiment'].keys():
         eval_replay_buffer_size = cfg['experiment']['eval_replay_buffer_size']
     else:
-        eval_replay_buffer_size =  int(min([env.max_timesteps, args.max_eval_timesteps])*args.num_eval_episodes)
+        eval_replay_buffer_size =  env.max_timesteps*args.num_eval_episodes
     print('running eval for %s steps'%eval_replay_buffer_size)
  
-    policy,  kwargs = build_model(cfg['experiment']['policy_name'], env)
-    policy.kinematic_fn = eval(kinematic_fn)
+    policy,  kwargs = build_model(cfg['experiment']['policy_name'], env, cfg)
+
+    if 'kinematic' in cfg['experiment']['policy_name']:
+        policy.kinematic_fn = eval(kinematic_fn)
     savebase = load_model.replace('.pt','_eval_%06d_S%06d'%(eval_replay_buffer_size, eval_seed))
     replay_file = savebase+'.pkl' 
     movie_file = savebase+'_%s.mp4' %args.camera
@@ -267,7 +274,7 @@ if __name__ == '__main__':
     parser.add_argument('--camera', default='', choices=['default', 'frontview', 'sideview', 'birdview', 'agentview'])
     parser.add_argument('--load_model', default='')
     parser.add_argument('--num_eval_episodes', default=30, type=int)
-    parser.add_argument('--max_eval_timesteps', default=100, type=int)
+#    parser.add_argument('--max_eval_timesteps', default=100, type=int)
     args = parser.parse_args()
     # keys that are robot specific
    
@@ -276,11 +283,12 @@ if __name__ == '__main__':
     else:
         cfg = json.load(open(args.cfg))
         print(cfg)
+        env_type = cfg['experiment']['env_type']
         seed_everything(cfg['experiment']['seed'])
         random_state = np.random.RandomState(cfg['experiment']['seed'])
-        env = build_env(cfg['robot'], cfg['robot']['frame_stack'], skip_state_keys=skip_state_keys, env_type=cfg['experiment']['env_type'], default_camera=args.camera)
+        env = build_env(cfg['robot'], cfg['robot']['frame_stack'], skip_state_keys=skip_state_keys, env_type=env_type, default_camera=args.camera)
         savedir = make_savedir(cfg)
-        policy, kwargs = build_model(cfg['experiment']['policy_name'], env)
+        policy, kwargs = build_model(cfg['experiment']['policy_name'], env, cfg)
         replay_buffer = build_replay_buffer(cfg, env, cfg['experiment']['replay_buffer_size'], cam_dim=(0,0,0), seed=cfg['experiment']['seed'])
         robot_name = cfg['robot']['robots'][0]
         if 'robot_dh' in cfg['robot'].keys():
