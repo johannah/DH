@@ -428,8 +428,7 @@ def parse_slurm_task_rl(cfg, slurm_task_id, n_seeds=5):
             cfg['robot']['env_name'] = 'Lift'
         else:
             cfg['robot']['env_name'] = 'NutAssembly'
-    else:
-        return cfg
+    return cfg
 
 
 def parse_slurm_task_bc(root_dir, slurm_task_id):

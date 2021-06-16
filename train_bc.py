@@ -398,7 +398,8 @@ if __name__ == '__main__':
     else:
         agent_load_dir, fname = os.path.split(args.load_replay)
         _, ddir = os.path.split(agent_load_dir)
-        exp_name = 'BC_state_%s_lr%s_N%s_ROT%s'%(args.loss, args.learning_rate, args.noise, int(not args.drop_rot))
+        exp_name = 'BC_state_%s_lr%s_N%s_ROT%s_learnDH%s'%(args.loss, args.learning_rate, args.noise,
+                                                           int(not args.drop_rot), int(args.learn_dh))
 
     agent_cfg_path = os.path.join(agent_load_dir, 'cfg.txt')
     print('cfg', agent_cfg_path)
@@ -481,4 +482,4 @@ if __name__ == '__main__':
         if args.learn_dh:
             dh_opt = optim.Adam(robot_dh.parameters(), lr=0.001)
             print(f"Total number of DH parameters to learn: {sum(p.numel() for p in robot_dh.parameters())}")
-        train(data, step, n_epochs=int(1e7))
+        train(data, step, n_epochs=int(1e6))
