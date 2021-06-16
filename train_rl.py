@@ -36,9 +36,6 @@ https://github.com/ARISE-Initiative/robosuite/blob/65d3b9ad28d6e7a006e9eef7c5a03
 """
 
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-
 def eval_policy(env, policy, kwargs, eval_episodes=10):
 
     avg_reward = 0.
@@ -115,12 +112,12 @@ def run_train(env, eval_env, policy, replay_buffer, kwargs, savedir, exp_name, s
             num_steps+=1
             e_step+=1
         L.log('train_reward', ep_reward, num_steps)
-        
 
     step_filepath = os.path.join(savedir, '{}_{:010d}'.format(exp_name, num_steps))
     pickle.dump(replay_buffer, open(step_filepath+'.pkl', 'wb'))
     policy.save(step_filepath+'.pt')
- 
+
+
 def make_savedir(cfg, new_log_dir=''):
     cnt = 0
     datetime_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -142,6 +139,7 @@ def make_savedir(cfg, new_log_dir=''):
     os.system('cp -r %s %s'%(args.cfg, os.path.join(savedir, 'cfg.txt')))
     return savedir
 
+
 def run_eval(env, policy, replay_buffer, kwargs, cfg, cam_dim, savebase):
     robot_name = cfg['robot']['robots'][0]
     num_steps = 0
@@ -154,7 +152,6 @@ def run_eval(env, policy, replay_buffer, kwargs, cfg, cam_dim, savebase):
     torques = []
     rewards = []
     while num_steps < total_steps:
-        #ts, reward, d, o = env.reset()
         done = False
         state, body =  env.reset()
         if use_frames:
@@ -254,7 +251,7 @@ if __name__ == '__main__':
     parser.add_argument('--camera', default='', choices=['default', 'frontview', 'sideview', 'birdview', 'agentview'])
     parser.add_argument('--load_model', default='')
     parser.add_argument('--num_eval_episodes', default=10, type=int)
-    parser.add_argument('--max_eval_timesteps', default=100, type=int)
+    # parser.add_argument('--max_eval_timesteps', default=100, type=int)
     parser.add_argument('--log_dir', default='', type=str, help="Overwrites the log_dir in the config file (Needed for CC).")
     parser.add_argument('--use_comet', action='store_true', default=False)
     parser.add_argument('--slurm_task_id', default=-1, type=int)
