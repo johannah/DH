@@ -67,10 +67,8 @@ def run_train(env, model, replay_buffer, kwargs, savedir, exp_name, start_timest
             state = next_state
             body = next_body
             if num_steps > start_timesteps:
-                critic_loss, actor_loss = policy.train(num_steps, replay_buffer, batch_size)
-                if actor_loss != 0:
-                    tb_writer.add_scalar('actor_loss', actor_loss, num_steps)
-                tb_writer.add_scalar('critic_loss', critic_loss, num_steps)
+                loss_dict = policy.train(num_steps, replay_buffer, batch_size)
+                tb_writer.add_scalar('loss', loss_dict, num_steps)
             if not num_steps % save_every:
                 step_filepath = os.path.join(savedir, '{}_{:010d}'.format(exp_name, num_steps))
                 policy.save(step_filepath+'.pt')
@@ -182,7 +180,7 @@ def rollout():
         eval_replay_buffer_size =  int(min([env.max_timesteps, args.max_eval_timesteps])*args.num_eval_episodes)
     print('running eval for %s steps'%eval_replay_buffer_size)
  
-    policy,  kwargs = build_model(cfg['experiment']['policy_name'], env)
+    policy,  kwargs = build_model(cfg['experiment']['policy_name'], env, cfg)
     savebase = load_model.replace('.pt','_eval_%06d_S%06d'%(eval_replay_buffer_size, eval_seed))
     replay_file = savebase+'.pkl' 
     movie_file = savebase+'_%s.mp4' %args.camera
@@ -225,7 +223,7 @@ if __name__ == '__main__':
         random_state = np.random.RandomState(cfg['experiment']['seed'])
         env = build_env(cfg['robot'], cfg['robot']['frame_stack'], skip_state_keys=skip_state_keys, env_type=cfg['experiment']['env_type'], default_camera=args.camera)
         savedir = make_savedir(cfg)
-        policy, kwargs = build_model(cfg['experiment']['policy_name'], env)
+        policy, kwargs = build_model(cfg['experiment']['policy_name'], env, cfg)
 
         replay_buffer = build_replay_buffer(cfg, env, cfg['experiment']['replay_buffer_size'], cam_dim=(0,0,0), seed=cfg['experiment']['seed'])
  

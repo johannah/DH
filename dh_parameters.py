@@ -10,7 +10,6 @@ jaco27DOF_DH_lengths = {'D1':0.2755, 'D2':0.2050,
                         'D7':0.1600, 'e2':0.0098, 'D_grip':0.1775} # .001775e2 is dist to grip site
 
 
- 
 DH_attributes_jaco27DOF = {
           'DH_a':[0, 0, 0, 0, 0, 0, 0],
           'DH_alpha':[np.pi/2.0, np.pi/2.0, np.pi/2.0, np.pi/2.0, np.pi/2.0, np.pi/2.0, np.pi],
@@ -24,6 +23,20 @@ DH_attributes_jaco27DOF = {
                     0, 
                     -(jaco27DOF_DH_lengths['D6']+jaco27DOF_DH_lengths['D_grip']))
            }
+#
+#DH_attributes_jaco27DOF = {
+#          'DH_a':[0, 0, 0, 0, 0, 0, 0],
+#          'DH_alpha':[np.pi/2.0, np.pi/2.0, np.pi/2.0, np.pi/2.0, np.pi/2.0, np.pi/2.0, np.pi],
+#          'DH_theta_sign':[1, 1, 1, 1, 1, 1, 1],
+#          'DH_theta_offset':[np.pi,0.0, 0.0, 0.0, 0.0,0.0,np.pi/2.0],
+#          'DH_d':(-jaco27DOF_DH_lengths['D1'], 
+#                    0, 
+#                    -(jaco27DOF_DH_lengths['D2']+jaco27DOF_DH_lengths['D3']), 
+#                    -jaco27DOF_DH_lengths['e2'], 
+#                    -(jaco27DOF_DH_lengths['D4']+jaco27DOF_DH_lengths['D5']), 
+#                    0, 
+#                    -(jaco27DOF_DH_lengths['D6']+jaco27DOF_DH_lengths['D_grip']))
+#           }
 # Params for Denavit-Hartenberg Reference Frame Layout (DH)
 Panda_DH_lengths = {'D1':0.333, 'D2':0, 
                'D3':0.316, 'D4':0,

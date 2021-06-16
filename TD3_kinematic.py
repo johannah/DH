@@ -19,7 +19,6 @@ class Actor(nn.Module):
 
         self.max_policy_action = max_policy_action
 
-
     def forward(self, state):
         a = F.relu(self.l1(state))
         a = F.relu(self.l2(a))
@@ -78,8 +77,11 @@ class TD3(object):
         **kwargs
     ):
 
+        """
+        max_policy_action list or number to clip output by
+        """
         self.device = device
-        self.max_policy_action = max_policy_action
+        self.max_policy_action = torch.FloatTensor(max_policy_action).to(self.device)
         self.discount = discount
         self.tau = tau
         self.policy_noise = policy_noise
@@ -107,7 +109,7 @@ class TD3(object):
         self.step = step
         self.total_it += 1
         # Sample replay buffer
-        state, _, action, reward, next_state, _, not_done, _, _ = replay_buffer.sample(batch_size)
+        state, body, action, reward, next_state, next_body, not_done, _, _ = replay_buffer.sample(batch_size)
         state = torch.FloatTensor(state).to(self.device)
         action = torch.FloatTensor(action).to(self.device)
         reward = torch.FloatTensor(reward).to(self.device)
@@ -120,10 +122,10 @@ class TD3(object):
                 torch.randn_like(action) * self.policy_noise
             ).clamp(-self.noise_clip, self.noise_clip)
 
-            # TODO - maybe clamp bt known min/max actions
+            # doeesnt need clamp bc it has tanh*max action 
             next_action = (
                 self.actor_target(next_state) + noise
-            ).clamp(-self.max_policy_action, self.max_policy_action)
+            )#.clamp(-self.max_policy_action, self.max_policy_action)
 
             # Compute the target Q value
             target_Q1, target_Q2 = self.critic_target(next_state, next_action)
@@ -133,8 +135,15 @@ class TD3(object):
         # Get current Q estimates
         current_Q1, current_Q2 = self.critic(state, action)
 
+        # DO DH
+        _next_action = self.actor_target(next_state)#.clamp(-self.max_policy_action, self.max_policy_action)
+        robot_pose, target_pose = self.kinematic_fn(_next_action, next_state, body, next_body)
+     
+        kine_loss = F.mse_loss(robot_pose, target_pose)
+        q1_loss = F.mse_loss(current_Q1, target_Q)
+        q2_loss = F.mse_loss(current_Q2, target_Q)
         # Compute critic loss
-        critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(current_Q2, target_Q)
+        critic_loss = q1_loss + q2_loss 
 
         # Optimize the critic
         self.critic_optimizer.zero_grad()
@@ -146,7 +155,7 @@ class TD3(object):
         if self.total_it % self.policy_freq == 0:
 
             # Compute actor losse
-            actor_loss = -self.critic.Q1(state, self.actor(state)).mean()
+            actor_loss = -self.critic.Q1(state, self.actor(state)).mean() + kine_loss
             # Optimize the actor
             self.actor_optimizer.zero_grad()
             actor_loss.backward()
@@ -158,8 +167,9 @@ class TD3(object):
 
             for param, target_param in zip(self.actor.parameters(), self.actor_target.parameters()):
                 target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
-        #return critic_loss, actor_loss
-        return {'critic':critic_loss, 'actor':actor_loss}
+            #from IPython import embed; embed()
+        return {'critic':critic_loss, 'actor':actor_loss, 'q1':q1_loss, 'q2':q2_loss, 'kine':kine_loss}
+
 
     def save(self, filepath):
         model_dict =  {'critic':self.critic.state_dict(), 
