@@ -17,7 +17,8 @@ from IPython import embed
 _EPS = np.finfo(float).eps * 4.0
 
 # some keys are robot-specifig!
-skip_state_keys = ['robot0_joint_pos_cos', 'robot0_joint_pos_sin','robot0_joint_vel', 'robot0_proprio-state']
+BC_skip_state_keys = ['robot0_joint_pos_cos', 'robot0_joint_pos_sin','robot0_joint_vel', 'robot0_proprio-state']
+skip_state_keys = []
 
 
 

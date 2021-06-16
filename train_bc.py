@@ -23,7 +23,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from utils import build_env, build_replay_buffer, plot_replay, get_replay_state_dict
 from replay_buffer import compress_frame
-from dh_utils import find_latest_checkpoint, create_results_dir, skip_state_keys, mean_angle_btw_vectors, so3_relative_angle
+from dh_utils import find_latest_checkpoint, create_results_dir, BC_skip_state_keys, mean_angle_btw_vectors, so3_relative_angle
 from dh_utils import robotDH, seed_everything, normalize_joints
 from dh_utils import load_robosuite_data, get_data_norm_params, quaternion_from_matrix, quaternion_matrix, robot_attributes
 
@@ -227,7 +227,7 @@ def setup_eval():
    
     print('loading model: %s'%load_model)
     cfg['robot']['controller_config_file'] = 'configs/%s_joint_position.json'%args.target_robot_name.lower()
-    env = build_env(cfg['robot'], k=1, skip_state_keys=skip_state_keys, env_type=cfg['experiment']['env_type'], default_camera=args.camera)    
+    env = build_env(cfg['robot'], k=1, skip_state_keys=BC_skip_state_keys, env_type=cfg['experiment']['env_type'], default_camera=args.camera)    
     if 'eval_seed' in cfg['experiment'].keys():
         eval_seed = cfg['experiment']['eval_seed'] + 1000
     else:
