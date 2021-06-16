@@ -34,7 +34,7 @@ from dh_utils import robotDH, quaternion_matrix, quaternion_from_matrix, robot_a
 
 from IPython import embed; 
 
-MAX_RELATIVE_ANGLE = np.pi/16
+#MAX_RELATIVE_ANGLE = np.pi/16
 
 class eval_mode(object):
     def __init__(self, *models):
