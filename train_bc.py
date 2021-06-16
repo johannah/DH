@@ -458,9 +458,10 @@ if __name__ == '__main__':
     save_every_epochs = 100
 
     if args.learn_dh:
-        robot_dh = robotDHLearnable(robot_name=args.target_robot_name, dh_noise=args.dh_noise, device=device)
+        robot_dh = robotDHLearnable(robot_name=args.target_robot_name, dh_noise=args.dh_noise, device=device,
+                                    source_robot_name=args.source_robot_name)
     else:
-        robot_dh = robotDH(robot_name=args.target_robot_name, device=device)
+        robot_dh = robotDH(robot_name=args.target_robot_name, device=device, source_robot_name=args.source_robot_name)
 
     data = load_data()
     base_matrix = torch.FloatTensor((data['base_matrix'])).to(device)
