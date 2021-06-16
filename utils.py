@@ -343,7 +343,18 @@ def build_env(cfg, k, skip_state_keys, env_type='robosuite', default_camera=''):
                            )
     elif env_type == 'dm_control':
         env = suite.load(cfg['robots'][0], cfg['env_name'])
-    xpos_targets = cfg['xpos_targets']
+    try:
+        xpos_targets = cfg['xpos_targets']
+    except KeyError:
+        # dirty hack for backward compatibility with the previously saved models
+        if cfg['robots'][0] == 'reacher':
+            xpos_targets = ["finger", "target"]
+        else:
+            if cfg['env_name'] == 'Door':
+                xpos_targets = ["gripper0_grip_site", "Door_handle"]
+            elif cfg['env_name'] == 'Lift':
+                xpos_targets = ["gripper0_grip_site", "cube"]
+
     env = EnvStack(env, k=k, skip_state_keys=skip_state_keys, env_type=env_type, default_camera=default_camera, xpos_targets=xpos_targets)
     return env
 
