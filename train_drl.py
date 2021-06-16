@@ -78,6 +78,7 @@ def eval_policy(eval_env, policy, kwargs, eval_episodes=10):
             action = policy.select_action(np.array(state)).clip(-kwargs['max_action'], kwargs['max_action'])
             state, body, reward, done, _ = eval_env.step(action)
             ep_reward += reward
+        print(ep_reward)
         total_rewards.append(ep_reward)
     avg_reward = np.mean(total_rewards)
 

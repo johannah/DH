@@ -135,11 +135,6 @@ class TD3(object):
         # Get current Q estimates
         current_Q1, current_Q2 = self.critic(state, action)
 
-        # DO DH
-        _next_action = self.actor_target(next_state)#.clamp(-self.max_policy_action, self.max_policy_action)
-        robot_pose, target_pose = self.kinematic_fn(_next_action, next_state, body, next_body)
-     
-        kine_loss = F.mse_loss(robot_pose, target_pose)
         q1_loss = F.mse_loss(current_Q1, target_Q)
         q2_loss = F.mse_loss(current_Q2, target_Q)
         # Compute critic loss
@@ -153,6 +148,10 @@ class TD3(object):
         # Delayed policy updates
         actor_loss = 0
         if self.total_it % self.policy_freq == 0:
+            # DO DH
+            _next_action = self.actor_target(next_state)#.clamp(-self.max_policy_action, self.max_policy_action)
+            robot_pose, target_pose = self.kinematic_fn(_next_action, next_state, body, next_body)
+            kine_loss = F.mse_loss(robot_pose, target_pose)
 
             # Compute actor losse
             actor_loss = -self.critic.Q1(state, self.actor(state)).mean() + kine_loss

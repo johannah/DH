@@ -38,25 +38,30 @@ DH_attributes_jaco27DOF = {
 #                    -(jaco27DOF_DH_lengths['D6']+jaco27DOF_DH_lengths['D_grip']))
 #           }
 # Params for Denavit-Hartenberg Reference Frame Layout (DH)
-Panda_DH_lengths = {'D1':0.333, 'D2':0, 
-               'D3':0.316, 'D4':0,
-               'D5':0.384, 'D6':0, 
-               'D7':0, 'DF':0.1065, 'e1':0.0825}
+
+
+
+
+
+Panda_DH_lengths = {'D1':0.333,  
+               'D3':0.316, 
+               'D5':0.384, 
+               'DF':0.1065, "D_grip":0.097, 'e1':0.0825, 'j7':0.088}
 
  
 DH_attributes_Panda = {
-          'DH_a':[0, 0, Panda_DH_lengths['e1'], -Panda_DH_lengths['e1'], 0, 0, 0, 0],
-           'DH_alpha':[0, -np.pi/2.0, np.pi/2.0, np.pi/2.0, -np.pi/2.0, np.pi/2.0, np.pi/2.0,0],
-           'DH_theta_sign':[1, 1, 1, 1, 1, 1, 1],
+          'DH_a':[0, 0, 0, Panda_DH_lengths['e1'], -Panda_DH_lengths['e1'], 0, Panda_DH_lengths['j7'], 0],
+           'DH_alpha':[0, -np.pi/2.0, np.pi/2.0, np.pi/2.0, -np.pi/2.0, np.pi/2.0, np.pi/2.0, 0],
+           'DH_theta_sign':[1, 1, 1, 1, 1, 1, 1, 0],
            'DH_theta_offset':[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
            'DH_d':(Panda_DH_lengths['D1'], 
-                   Panda_DH_lengths['D2'],
+                   0.0,
                    Panda_DH_lengths['D3'], 
-                   Panda_DH_lengths['D4'],
+                   0.0,
                    Panda_DH_lengths['D5'],
-                   Panda_DH_lengths['D6'],
-                   Panda_DH_lengths['D7'],
-                   Panda_DH_lengths['DF'])
+                   0.0,
+                   0.0,
+                   Panda_DH_lengths['D_grip'])
            }
 
 

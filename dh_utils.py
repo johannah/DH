@@ -272,7 +272,7 @@ class robotDH():
         for _a in range(fs):        
             _T1 = self.np_dh_transform(_a, angles[:,_a])
             _T = np.matmul(_T, _T1)
-            #print(_a, _T[0])
+            #print(_a, _T[0, :3, 3])
             #print(T.mat2euler(_T[0]))
         return _T
 
