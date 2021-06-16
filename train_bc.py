@@ -24,7 +24,7 @@ import torch.nn.init as init
 import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
 
-from utils import build_env, build_replay_buffer, plot_replay, get_replay_state_dict, get_hyperparameters, parse_slurm_task_bc
+from utils import build_env, build_replay_buffer, plot_replay, get_replay_state_dict, get_hyperparameters, parse_slurm_task_bc, parse_slurm_task_transfer
 from replay_buffer import compress_frame
 from dh_utils import find_latest_checkpoint, create_results_dir, skip_state_keys, mean_angle_btw_vectors, so3_relative_angle
 from dh_utils import robotDH, robotDHLearnable, seed_everything, normalize_joints
@@ -373,6 +373,7 @@ if __name__ == '__main__':
     parser.add_argument('--drop_rot', default=False, action='store_true')
     parser.add_argument('--noise', default=1, type=float)
     parser.add_argument('--dh_noise', default=0.1, type=float)
+    parser.add_argument('--transfer', action='store_true', default=False)
     parser.add_argument('--use_comet', action='store_true', default=False)
     parser.add_argument('--slurm_task_id', default=-1, type=int)
     args = parser.parse_args()
@@ -382,27 +383,42 @@ if __name__ == '__main__':
     # some keys are robot-specifig!
     # TODO log where data was trained
 
-    if args.slurm_task_id != -1:
-        # overwrites args.load_replay to make the rest of script unchanged
-        slurm_load_replay = parse_slurm_task_bc(args.load_replay, args.slurm_task_id)
+    if args.transfer:
+        # super dirty stuff to make it work for the deadline...
+        assert args.slurm_task_id != -1, "Transfer is only working for reacher on CC"
+        assert args.target_robot_name in ['double', 'long_wrist']
+        slurm_load_replay, slurm_load_model = parse_slurm_task_transfer(args.load_replay, args.slurm_task_id,
+                                                                        args.learn_dh, args.target_task)
         args.load_replay = slurm_load_replay
+        args.load_model = slurm_load_model
 
-    if args.load_model != '':
-        if os.path.isdir(args.load_model):
-            load_model = sorted(glob(os.path.join(args.load_model, '*.pt')))[-1]
-            load_dir = args.load_model
-        else:
-            assert args.load_model.endswith('.pt')
-            load_model = args.load_model
-            load_dir, model_name = os.path.split(args.load_model)
-
-        agent_load_dir = os.path.split(os.path.split(os.path.split(load_dir)[0])[0])[0]
-        args.load_replay = os.path.split(os.path.split(load_dir)[0])[0]+'.pkl'
-    else:
         agent_load_dir, fname = os.path.split(args.load_replay)
         _, ddir = os.path.split(agent_load_dir)
-        exp_name = 'BC_state_%s_lr%s_N%s_ROT%s_learnDH%s'%(args.loss, args.learning_rate, args.noise,
-                                                           int(not args.drop_rot), int(args.learn_dh))
+        exp_name = 'Transfer_state_%s_lr%s_N%s_ROT%s_learnDH%s' % (args.loss, args.learning_rate, args.noise,
+                                                                   int(not args.drop_rot), int(args.learn_dh))
+
+    else:
+        if args.slurm_task_id != -1:
+            # overwrites args.load_replay to make the rest of script unchanged
+            slurm_load_replay = parse_slurm_task_bc(args.load_replay, args.slurm_task_id)
+            args.load_replay = slurm_load_replay
+
+        if args.load_model != '':
+            if os.path.isdir(args.load_model):
+                load_model = sorted(glob(os.path.join(args.load_model, '*.pt')))[-1]
+                load_dir = args.load_model
+            else:
+                assert args.load_model.endswith('.pt')
+                load_model = args.load_model
+                load_dir, model_name = os.path.split(args.load_model)
+
+            agent_load_dir = os.path.split(os.path.split(os.path.split(load_dir)[0])[0])[0]
+            args.load_replay = os.path.split(os.path.split(load_dir)[0])[0]+'.pkl'
+        else:
+            agent_load_dir, fname = os.path.split(args.load_replay)
+            _, ddir = os.path.split(agent_load_dir)
+            exp_name = 'BC_state_%s_lr%s_N%s_ROT%s_learnDH%s'%(args.loss, args.learning_rate, args.noise,
+                                                               int(not args.drop_rot), int(args.learn_dh))
 
     agent_cfg_path = os.path.join(agent_load_dir, 'cfg.txt')
     print('cfg', agent_cfg_path)

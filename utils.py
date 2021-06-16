@@ -458,9 +458,24 @@ def parse_slurm_task_rl(cfg, slurm_task_id, n_seeds=5):
 
 
 def parse_slurm_task_bc(root_dir, slurm_task_id):
+    # Note: This assumes that root_dir already has the replay buffers saved!
     assert slurm_task_id != -1
     files = sorted(Path(root_dir).glob("**/*_eval_*.pkl"))
     return str(files[slurm_task_id])
+
+
+def parse_slurm_task_transfer(root_dir, slurm_task_id, learn_dh, target_task, n_seeds=5):
+    # Note: This assumes that root_dir has replay buffers and trained LSTM models saved!
+    # Warning: lots of hardcoded shit (only works for reacher)
+    assert slurm_task_id != -1
+    assert target_task in ['double', 'long_wrist']
+    replay_files = sorted(Path(root_dir).glob(f"*{target_task}*/*eval*.pkl"))
+    replay_buffer_path = str(replay_files[slurm_task_id])
+
+    bc_experiment_to_load = sorted(Path(root_dir).glob("*/"))[slurm_task_id]
+    model_path = sorted(bc_experiment_to_load.glob(f"**/*_DH_*_learnDH{int(learn_dh)}_*/lstm_*_.pt"))[-1]
+
+    return replay_buffer_path, model_path
 
 
 def plot_replay(env, replay_buffer, savebase, frames=False):
