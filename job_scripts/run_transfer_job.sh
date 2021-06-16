@@ -18,5 +18,6 @@ export MUJOCO_GL="egl"
 # config
 root_folder=$SCRATCH/DH_logs/reacher/
 target_robot_name="double"
+source_robot_name="reacher"
 
-python $HOME/workspace/DH/train_bc.py --transfer --target_robot_name $target_robot_name --load_replay $root_folder --use_comet --slurm_task_id $SLURM_ARRAY_TASK_ID --learn_dh
+python $HOME/workspace/DH/train_bc.py --transfer --target_robot_name $target_robot_name --source_robot_name $source_robot_name --load_replay $root_folder --use_comet --slurm_task_id $SLURM_ARRAY_TASK_ID --learn_dh --dh_noise 0

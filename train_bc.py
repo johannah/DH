@@ -360,6 +360,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--load_replay')
     parser.add_argument('--target_robot_name', default='')
+    parser.add_argument('--source_robot_name', default='reacher')
     parser.add_argument('--learn_dh', action='store_true', default=False)
     parser.add_argument('--eval', default=False, action='store_true')
     parser.add_argument('--force', default=False, action='store_true')
@@ -394,8 +395,8 @@ if __name__ == '__main__':
 
         agent_load_dir, fname = os.path.split(args.load_replay)
         _, ddir = os.path.split(agent_load_dir)
-        exp_name = 'Transfer_state_%s_lr%s_N%s_ROT%s_learnDH%s' % (args.loss, args.learning_rate, args.noise,
-                                                                   int(not args.drop_rot), int(args.learn_dh))
+        exp_name = 'Transfer_to_%s_state_%s_lr%s_N%s_ROT%s_learnDH%s' % (args.target_robot_name, args.loss, args.learning_rate,
+                                                                         args.noise, int(not args.drop_rot), int(args.learn_dh))
         args.target_robot_name = 'reacher_' + args.target_robot_name
 
     else:
@@ -467,7 +468,7 @@ if __name__ == '__main__':
     #train_mean, train_std = get_data_norm_params(_d.reshape(_t*_b,_f), device=device)
      
     input_size = data['valid']['states'].shape[2]
-    output_size =  data['valid']['actions'].shape[2]
+    output_size = data['valid']['actions'].shape[2]
 
     lstm = LSTM(input_size=input_size, output_size=output_size, hidden_size=hidden_size).to(device)
     criterion = nn.MSELoss()

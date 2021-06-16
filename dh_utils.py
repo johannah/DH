@@ -254,10 +254,14 @@ def mean_angle_btw_vectors(v1, v2, eps = 1e-4):
 
 
 class robotDH():
-    def __init__(self, robot_name, device='cpu'):
+    def __init__(self, robot_name, device='cpu', source_robot_name=''):
+        if not source_robot_name:
+            # source and target are equal
+            source_robot_name = robot_name
         self.device = device
         self.robot_name = robot_name
-        self.npdh = robot_attributes[self.robot_name]
+        # self.npdh = robot_attributes[self.robot_name]
+        self.npdh = robot_attributes[source_robot_name]
         self.tdh = {}
         for key, item in self.npdh.items():
             self.tdh[key] = torch.FloatTensor(item).to(self.device)
@@ -310,19 +314,25 @@ class robotDH():
 
 
 class robotDHLearnable(nn.Module):
-    def __init__(self, robot_name, dh_noise=0.1, device='cpu'):
+    def __init__(self, robot_name, dh_noise=0.1, device='cpu', source_robot_name=''):
         super().__init__()
+        if not source_robot_name:
+            # source and target are equal
+            source_robot_name = robot_name
         self.device = device
         self.learnable_params = ['DH_a']
         self.robot_name = robot_name
         self.npdh_true = robot_attributes[self.robot_name]
+        self.npdh_source = robot_attributes[source_robot_name]
         self.tdh_true = {}
         self.tdh = nn.ParameterDict({})
         for key, item in self.npdh_true.items():
             self.tdh_true[key] = torch.FloatTensor(item).to(self.device)
             if key in self.learnable_params:
+                # start from the source params
                 param_noise = torch.normal(torch.zeros(len(item)), dh_noise * torch.ones(len(item))).to(device)
-                self.tdh[key] = nn.Parameter(torch.abs(torch.FloatTensor(item).to(device) + param_noise), requires_grad=True)
+                self.tdh[key] = nn.Parameter(torch.abs(torch.FloatTensor(self.npdh_source[key]).to(device) + param_noise),
+                                             requires_grad=True)
             else:
                 self.tdh[key] = nn.Parameter(torch.FloatTensor(item).to(device), requires_grad=False)
 
