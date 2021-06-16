@@ -66,7 +66,8 @@ def forward_pass(x, phase='train'):
         y_pred[i] = y_pred[i] + output
     return y_pred
 
-def train(data, step=0, n_epochs=1e7):
+
+def train(data, step=0, n_epochs=int(1e6), max_steps=int(1e6)):
     # todo add running avg for loss
     train_loss = 0; valid_loss = 0
     for epoch in range(n_epochs):
@@ -152,7 +153,9 @@ def train(data, step=0, n_epochs=1e7):
             model_dict = {'model':lstm.state_dict(), 'train_cnt':step}
             fbase = os.path.join(savebase, 'lstm_model_%010d'%(step))
             print('saving model', fbase)
-            torch.save(model_dict, fbase+'.pt') 
+            torch.save(model_dict, fbase+'.pt')
+        if step > max_steps:
+            break
     model_dict = {'model':lstm.state_dict(), 'train_cnt':step}
     fbase = os.path.join(savebase, 'lstm_model_%010d'%(step))
     print('saving model', fbase)
@@ -482,4 +485,4 @@ if __name__ == '__main__':
         if args.learn_dh:
             dh_opt = optim.Adam(robot_dh.parameters(), lr=0.001)
             print(f"Total number of DH parameters to learn: {sum(p.numel() for p in robot_dh.parameters())}")
-        train(data, step, n_epochs=int(1e6))
+        train(data, step, n_epochs=int(1e6), max_steps=int(1e6))
