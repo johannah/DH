@@ -192,8 +192,11 @@ class EnvStack():
             self.bori = self.env.robots[0].base_ori
             # hard code orientation
             # TODO add conversion to rotation matrix
-            self.base_matrix = quaternion_matrix(self.bori)
-            self.base_matrix[:3, 3] = self.bpos
+            #self.base_matrix = quaternion_matrix(self.bori)
+            #self.base_matrix[:3, 3] = self.bpos
+            self.base_matrix = np.eye(4,4)
+            self.base_matrix[1,1] = -1
+            self.base_matrix[2,2] = -1
             
             # TODO this is hacky - but it seems the world needs to be flipped in y,z to be correct
             # Sanity checked in Jaco w/ Door

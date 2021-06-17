@@ -49,9 +49,9 @@ def jaco_kinematic_fn(action, state, body, next_body):
     n_joints = len(robot_dh.npdh['DH_a'])
     # turn relative action to abs action
     joint_position = action[:, :n_joints] + torch.FloatTensor(body[:, :n_joints])
-    bm = np.eye(4)
-    bm[:3, :3] = get_rot_mat(alpha=0., beta=np.pi, gamma=np.pi)
-    eef_rot = robot_dh.torch_angle2ee(robot_dh.base_matrix, joint_position)
+    #bm = np.eye(4)
+    #bm[:3, :3] = get_rot_mat(alpha=0., beta=np.pi, gamma=np.pi)
+    eef_rot = robot_dh.torch_angle2ee(bm, joint_position)
     eef_pos = eef_rot[:,:3,3]
 
     # second body n_joints + 3 + 16 + 3 = 29
@@ -159,7 +159,7 @@ def make_savedir(cfg):
     if not os.path.exists(savedir):
         os.makedirs(savedir)
  
-    os.system('cp -r %s %s'%(args.cfg, os.path.join(savedir, 'cfg.txt')))
+    json.dump(cfg, open(os.path.join(savedir, 'cfg.txt'), 'w'))
     return savedir
 
 def run_eval(env, policy, replay_buffer, kwargs, cfg, cam_dim, savebase):
@@ -295,6 +295,7 @@ if __name__ == '__main__':
     parser.add_argument('--camera', default='', choices=['default', 'frontview', 'sideview', 'birdview', 'agentview'])
     parser.add_argument('--load_model', default='')
     parser.add_argument('--num_eval_episodes', default=30, type=int)
+    parser.add_argument('--seed', default=-1, type=int)
 #    parser.add_argument('--max_eval_timesteps', default=100, type=int)
     args = parser.parse_args()
     # keys that are robot specific
@@ -305,14 +306,17 @@ if __name__ == '__main__':
         cfg = json.load(open(args.cfg))
         print(cfg)
         env_type = cfg['experiment']['env_type']
-        seed_everything(cfg['experiment']['seed'])
-        random_state = np.random.RandomState(cfg['experiment']['seed'])
+        if args.seed >=0:  
+            seed = args.seed
+            cfg['experiment']['seed'] = seed
+        else: seed = cfg['experiment']['seed'] 
+        seed_everything(seed)
+        random_state = np.random.RandomState(seed)
         env = build_env(cfg['robot'], cfg['robot']['frame_stack'], skip_state_keys=skip_state_keys, env_type=env_type, default_camera=args.camera)
-        eval_env = build_env(cfg['robot'], cfg['robot']['frame_stack'], skip_state_keys=skip_state_keys,
-                             env_type=cfg['experiment']['env_type'], default_camera=args.camera)
+        eval_env = build_env(cfg['robot'], cfg['robot']['frame_stack'], skip_state_keys=skip_state_keys, env_type=cfg['experiment']['env_type'], default_camera=args.camera)
         savedir = make_savedir(cfg)
         policy, kwargs = build_model(cfg['experiment']['policy_name'], env, cfg)
-        replay_buffer = build_replay_buffer(cfg, env, cfg['experiment']['replay_buffer_size'], cam_dim=(0,0,0), seed=cfg['experiment']['seed'])
+        replay_buffer = build_replay_buffer(cfg, env, cfg['experiment']['replay_buffer_size'], cam_dim=(0,0,0), seed=seed)
         robot_name = cfg['robot']['robots'][0]
         if 'robot_dh' in cfg['robot'].keys():
             robot_dh_name = cfg['robot']['robot_dh']
