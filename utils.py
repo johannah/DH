@@ -35,7 +35,7 @@ from dh_utils import robotDH, quaternion_matrix, quaternion_from_matrix, robot_a
 
 from IPython import embed; 
 
-MAX_RELATIVE_ANGLE = np.pi/16
+#MAX_RELATIVE_ANGLE = np.pi/16
 
 class eval_mode(object):
     def __init__(self, *models):
@@ -518,10 +518,29 @@ def plot_replay(env, replay_buffer, savebase, frames=False):
 
     rdh = robotDH(robot_name)
     bm = replay_buffer.base_matrix
-    if robot_name == 'Jaco':
+    nt = replay_buffer.bodies.shape[0]
+    if robot_name.lower() == 'jaco':
         bm = np.eye(4)
         bm[:3, :3] = get_rot_mat(alpha=0., beta=np.pi, gamma=np.pi)          
         # position is right, but orientation is wrong
+        n_joints = 7
+    elif 'reacher' in robot_name.lower():
+        n_joints = 2
+    elif 'panda' in robot_name.lower():
+        n_joints = 7 
+    elif 'sawyer' in robot_name.lower():
+        bm = np.eye(4)
+        n_joints = 7 
+ 
+    joint_positions = replay_buffer.bodies[:,:n_joints]
+    if 'panda' in robot_name.lower():
+        # todo need an extra transform for flange
+        bm = np.eye(4)
+        #bm[:3, :3] = get_rot_mat(alpha=0.0, beta=0, gamma=np.pi)          
+        joint_positions = np.hstack((joint_positions, np.zeros((nt, 1))))
+        #bm[:3, :3] = get_rot_mat(alpha=np.pi, beta=np.pi, gamma=np.pi)          
+        #pm[1,1] = -1
+
 
     print("BM", bm)
     #true_rmat = []
@@ -539,9 +558,6 @@ def plot_replay(env, replay_buffer, savebase, frames=False):
     ##embed()
  
     #true_rmat = np.array(true_rmat)
-    n_joints = len(rdh.npdh['DH_a'])
-    joint_positions = replay_buffer.bodies[:,:n_joints]
-    nt = replay_buffer.bodies.shape[0]
     true_rmat = replay_buffer.bodies[:,n_joints+3:n_joints+3+16].reshape(nt, 4,4)
 
     true_pos = true_rmat[:,:3,3]
@@ -553,6 +569,7 @@ def plot_replay(env, replay_buffer, savebase, frames=False):
     dh_pos = dh_rmat[:,:3,3]
     dh_euler = np.array([T.mat2euler(a) for a in dh_rmat])
     dh_quat = np.array([T.mat2quat(a) for a in dh_rmat])
+    embed()
 
 #    This fixes rotation matrix for jaco as a hack for euler
 #    bm[:3, :3] = get_rot_mat(alpha=0., beta=np.pi, gamma=np.pi)

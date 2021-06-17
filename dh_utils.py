@@ -19,7 +19,8 @@ from IPython import embed
 _EPS = np.finfo(float).eps * 4.0
 
 # some keys are robot-specifig!
-skip_state_keys = ['robot0_joint_pos_cos', 'robot0_joint_pos_sin','robot0_joint_vel', 'robot0_proprio-state']
+BC_skip_state_keys = ['robot0_joint_pos_cos', 'robot0_joint_pos_sin','robot0_joint_vel', 'robot0_proprio-state']
+skip_state_keys = []
 
 
 
@@ -280,7 +281,7 @@ class robotDH():
         for _a in range(fs):        
             _T1 = self.np_dh_transform(_a, angles[:,_a])
             _T = np.matmul(_T, _T1)
-            #print(_a, _T[0])
+            #print(_a, _T[0, :3, 3])
             #print(T.mat2euler(_T[0]))
         return _T
 
