@@ -26,7 +26,7 @@ from IPython import embed
 
 
 """
-eef_rot_offset? 
+eef_rot_offset?
 https://github.com/ARISE-Initiative/robosuite/blob/fc3738ca6361db73376e4c9d8a09b0571167bb2d/robosuite/models/robots/manipulators/manipulator_model.py
 https://github.com/ARISE-Initiative/robosuite/blob/65d3b9ad28d6e7a006e9eef7c5a0330816483be4/robosuite/environments/manipulation/single_arm_env.py#L41
 """
@@ -50,20 +50,20 @@ def run_train(env, model, replay_buffer, kwargs, savedir, exp_name, start_timest
                         policy.select_action(state)
                         + random_state.normal(0, kwargs['max_action'] * expl_noise, size=kwargs['action_dim'])
                     ).clip(-kwargs['max_action'], kwargs['max_action'])
-     
- 
+
+
             next_state, next_body, reward, done, info = env.step(action) # take a random action
             ep_reward += reward
             if use_frames:
                 next_frame_compressed = compress_frame(env.render(camera_name=args.camera, height=h, width=w))
-     
-                replay_buffer.add(state, body, action, reward, next_state, next_body, done, 
-                              frame_compressed=frame_compressed, 
+
+                replay_buffer.add(state, body, action, reward, next_state, next_body, done,
+                              frame_compressed=frame_compressed,
                               next_frame_compressed=next_frame_compressed)
                 frame_compressed = next_frame_compressed
             else:
                 replay_buffer.add(state, body, action, reward, next_state, next_body, done)
-     
+
             state = next_state
             body = next_body
             if num_steps > start_timesteps:
@@ -75,26 +75,26 @@ def run_train(env, model, replay_buffer, kwargs, savedir, exp_name, start_timest
             num_steps+=1
             e_step+=1
         tb_writer.add_scalar('train_reward', ep_reward, num_steps)
-        
+
 
     step_filepath = os.path.join(savedir, '{}_{:010d}'.format(exp_name, num_steps))
     pickle.dump(replay_buffer, open(step_filepath+'.pkl', 'wb'))
     policy.save(step_filepath+'.pt')
- 
+
 def make_savedir(cfg):
     cnt = 0
 
-    savedir = os.path.join(cfg['experiment']['log_dir'], "%s_%s_%05d_%s_%s_%02d"%(cfg['experiment']['exp_name'], 
-                                                                        cfg['robot']['env_name'],  cfg['experiment']['seed'], 
+    savedir = os.path.join(cfg['experiment']['log_dir'], "%s_%s_%05d_%s_%s_%02d"%(cfg['experiment']['exp_name'],
+                                                                        cfg['robot']['env_name'],  cfg['experiment']['seed'],
                                                                         cfg['robot']['robots'][0], cfg['robot']['controller'],  cnt))
     while len(glob(os.path.join(savedir, '*.pt'))):
         cnt +=1
-        savedir = os.path.join(cfg['experiment']['log_dir'], "%s_%s_%05d_%s_%s_%02d"%(cfg['experiment']['exp_name'], 
-                                                                        cfg['robot']['env_name'],  cfg['experiment']['seed'], 
+        savedir = os.path.join(cfg['experiment']['log_dir'], "%s_%s_%05d_%s_%s_%02d"%(cfg['experiment']['exp_name'],
+                                                                        cfg['robot']['env_name'],  cfg['experiment']['seed'],
                                                                         cfg['robot']['robots'][0], cfg['robot']['controller'],  cnt))
     if not os.path.exists(savedir):
         os.makedirs(savedir)
- 
+
     os.system('cp -r %s %s'%(args.cfg, os.path.join(savedir, 'cfg.txt')))
     return savedir
 
@@ -126,15 +126,15 @@ def run_eval(env, policy, replay_buffer, kwargs, cfg, cam_dim, savebase):
             action = (
                     policy.select_action(state)
                 ).clip(-kwargs['max_action'], kwargs['max_action'])
- 
+
             next_state, next_body, reward, done, info = env.step(action) # take a random action
             ep_reward += reward
             if e_step+1 == args.max_eval_timesteps:
                 done = True
             if use_frames:
                 next_frame_compressed = compress_frame(env.render(camera_name=args.camera, height=h, width=w))
-                replay_buffer.add(state, body, action, reward, next_state, next_body, done, 
-                              frame_compressed=frame_compressed, 
+                replay_buffer.add(state, body, action, reward, next_state, next_body, done,
+                              frame_compressed=frame_compressed,
                               next_frame_compressed=next_frame_compressed)
                 frame_compressed = next_frame_compressed
             else:
@@ -165,7 +165,10 @@ def rollout():
     print('loading cfg: %s'%cfg_path)
     cfg = json.load(open(cfg_path))
     print(cfg)
-    env = build_env(cfg['robot'], cfg['robot']['frame_stack'], skip_state_keys=skip_state_keys, env_type=cfg['experiment']['env_type'], default_camera=args.camera)
+    env = build_env(cfg['robot'], cfg['robot']['frame_stack'],
+                    skip_state_keys=skip_state_keys,
+                    env_type=cfg['experiment']['env_type'],
+                    default_camera=args.camera)
     if 'eval_seed' in cfg['experiment'].keys():
         eval_seed = cfg['experiment']['eval_seed'] + 1000
     else:
@@ -173,33 +176,33 @@ def rollout():
     if args.frames: cam_dim = (240,240,3)
     else:
        cam_dim = (0,0,0)
- 
+
     if 'eval_replay_buffer_size' in cfg['experiment'].keys():
         eval_replay_buffer_size = cfg['experiment']['eval_replay_buffer_size']
     else:
         eval_replay_buffer_size =  int(min([env.max_timesteps, args.max_eval_timesteps])*args.num_eval_episodes)
     print('running eval for %s steps'%eval_replay_buffer_size)
- 
+
     policy,  kwargs = build_model(cfg['experiment']['policy_name'], env, cfg)
     savebase = load_model.replace('.pt','_eval_%06d_S%06d'%(eval_replay_buffer_size, eval_seed))
-    replay_file = savebase+'.pkl' 
+    replay_file = savebase+'.pkl'
     movie_file = savebase+'_%s.mp4' %args.camera
     if not os.path.exists(replay_file):
         policy.load(load_model)
         replay_buffer = build_replay_buffer(cfg, env, eval_replay_buffer_size, cam_dim, eval_seed)
- 
+
         rewards, replay_buffer = run_eval(env, policy, replay_buffer, kwargs, cfg, cam_dim, savebase)
         pickle.dump(replay_buffer, open(replay_file, 'wb'))
         plt.figure()
         plt.plot(rewards)
         plt.title('eval episode rewards')
         plt.savefig(savebase+'.png')
- 
+
     else:
         replay_buffer = pickle.load(open(replay_file, 'rb'))
     plot_replay(env, replay_buffer, savebase, frames=args.frames)
 
-   
+
 if __name__ == '__main__':
     import argparse
     from glob import glob
@@ -213,7 +216,7 @@ if __name__ == '__main__':
     parser.add_argument('--max_eval_timesteps', default=100, type=int)
     args = parser.parse_args()
     # keys that are robot specific
-    
+
     if args.eval:
         rollout()
     else:
@@ -226,6 +229,6 @@ if __name__ == '__main__':
         policy, kwargs = build_model(cfg['experiment']['policy_name'], env, cfg)
 
         replay_buffer = build_replay_buffer(cfg, env, cfg['experiment']['replay_buffer_size'], cam_dim=(0,0,0), seed=cfg['experiment']['seed'])
- 
+
         run_train(env, policy, replay_buffer, kwargs, savedir, cfg['experiment']['exp_name'], cfg['experiment']['start_training'], cfg['experiment']['eval_freq'], num_steps=0, max_timesteps=cfg['experiment']['max_timesteps'], expl_noise=cfg['experiment']['expl_noise'], batch_size=cfg['experiment']['batch_size'])
 

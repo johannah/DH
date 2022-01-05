@@ -1,7 +1,8 @@
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-
+from copy import deepcopy
+import sys
 from imageio import imwrite
 import math
 import os
@@ -32,7 +33,7 @@ import TD3, TD3_kinematic
 from replay_buffer import ReplayBuffer, compress_frame
 from dh_utils import robotDH, quaternion_matrix, quaternion_from_matrix, robot_attributes, normalize_joints
 
-from IPython import embed; 
+from IPython import embed;
 
 #MAX_RELATIVE_ANGLE = np.pi/16
 
@@ -165,9 +166,9 @@ class EnvStack():
     def __init__(self, env, k, skip_state_keys=[], env_type='robosuite', default_camera='', xpos_targets='', bpos="root"):
         assert env_type in ['robosuite', 'dm_control']
         """
-        xpos_targets - env positions to grab 
+        xpos_targets - env positions to grab
         """
-        # dm_control named.data to use for eef position 
+        # dm_control named.data to use for eef position
         # see https://github.com/deepmind/dm_control/blob/5ca4094e963236d0b7b3b1829f9097ad865ebabe/dm_control/suite/reacher.py#L66 for example:
         env.reset()
         self.bpos = bpos
@@ -178,7 +179,7 @@ class EnvStack():
         self._body = deque([], maxlen=k)
         self._state = deque([], maxlen=k)
         self.body_shape = k*len(self.make_body())
-        
+
         if self.env_type == 'robosuite':
             self.control_min = self.env.action_spec[0].min()
             self.control_max = self.env.action_spec[1].max()
@@ -188,18 +189,13 @@ class EnvStack():
             if default_camera == '':
                  self.default_camera = 'frontview'
 
-            self.bpos = self.env.robots[0].base_pos
-            self.bori = self.env.robots[0].base_ori
-            # hard code orientation
-            # TODO add conversion to rotation matrix
-            self.base_matrix = quaternion_matrix(self.bori)
-            self.base_matrix[:3, 3] = self.bpos
-            
-            # TODO this is hacky - but it seems the world needs to be flipped in y,z to be correct
-            # Sanity checked in Jaco w/ Door
-            # ensure this holds for other robots
-            #self.base_matrix[1,1] = -1
-            #self.base_matrix[2,2] = -1
+            self.base_matrix = np.array([[0,1,0,0],
+                                         [1,0,0,0],
+                                         [0,0,-1,0],
+                                         [0,0,0,1]])
+            self.bpos = self.base_matrix[:3, 3]
+            self.bori = quaternion_from_matrix(self.base_matrix)
+
 
         elif self.env_type == 'dm_control':
             self.control_min = self.env.action_spec().minimum[0]
@@ -209,7 +205,7 @@ class EnvStack():
             self.sim = self.env.physics
             if default_camera == '':
                  self.default_camera = -1
-  
+
             self.base_matrix = np.eye(4)
             # TODO hardcoded for reacher
             # eye is right rot for reachr
@@ -218,7 +214,7 @@ class EnvStack():
             self.base_matrix[:3, 3] = self.bpos
             #self.base_matrix[1,1] = 1 # TODO FOUND EXPERIMENTALLY FOR REACHER
             self.bori = quaternion_from_matrix(self.base_matrix)
- 
+
         total_size = 0
         self.skip_state_keys = skip_state_keys
         self.obs_keys = [o for o in list(self.env.observation_spec().keys()) if o not in self.skip_state_keys]
@@ -264,19 +260,28 @@ class EnvStack():
         if self.env_type == 'dm_control':
             # TODO hardcoded arm debug reacher
             bxqs = self.env.physics.data.qpos
-            for t in self.xpos_targets:
-                pos_in_world = self.env.physics.named.data.geom_xpos[t]
-                rot_in_world = self.env.physics.named.data.geom_xmat[t].reshape((3, 3))
-                targ_rmat = T.make_pose(pos_in_world, rot_in_world).reshape(16)
-                bxqs = np.hstack((bxqs, pos_in_world, targ_rmat))
+            # TODO FIX
+            #for t in self.xpos_targets:
+            #    pos_in_world = self.env.physics.named.data.geom_xpos[t]
+            #    rot_in_world = self.env.physics.named.data.geom_xmat[t].reshape((3, 3))
+            #    targ_rmat = T.make_pose(pos_in_world, rot_in_world).reshape(16)
+            #    bxqs = np.hstack((bxqs, pos_in_world, targ_rmat))
         if self.env_type == 'robosuite':
             r = self.env.robots[0]
-            bxqs = r._joint_positions
+            nj = len(r._joint_positions)
+            bxqs = np.zeros(((nj + (19 * len(self.xpos_targets)))))
+            bxqs[:nj] = deepcopy(r._joint_positions)
+            idx = nj
             for t in self.xpos_targets:
+                #sim_eef_pose = deepcopy(env.robots[0].pose_in_base_from_name(t)
+
                 sid = self.env.sim.model.site_name2id(t)
                 rmat = site_pose_in_base_from_name(self.env.sim, r.robot_model.root_body, t)
-                bxqs = np.hstack((bxqs, self.env.sim.data.site_xpos[sid], rmat.reshape(16)))
-     
+                bxqs[idx:idx+3] = deepcopy(self.env.sim.data.site_xpos[sid])
+                bxqs[idx+3:idx+19] = deepcopy(rmat.reshape(16))
+                idx += 19
+               #bxqs = np.hstack((bxqs, self.env.sim.data.site_xpos[sid], rmat.reshape(16)))
+
             #bxq = np.hstack((r._joint_positions, self.env.sim.data.site_xpos[r.eef_site_id], self.env.sim.data.get_body_xquat[r.eef_site_id]))
             #bxq = np.hstack((r._joint_positions, self.env.sim.data.site_xpos[r.eef_site_id], r.pose_in_base_from_name('gripper0_eef').reshape(16)))
             # joint pos, eef in world frame, grip site in base frame
@@ -286,7 +291,7 @@ class EnvStack():
     def reset(self):
         o = self.env.reset()
         if self.env_type == 'dm_control':
-            o = o.observation    
+            o = o.observation
         o = self.make_obs(o)
         b = self.make_body()
         for _ in range(self.k):
@@ -305,7 +310,7 @@ class EnvStack():
             info = o.step_type
         self._state.append(self.make_obs(state))
         self._body.append(self.make_body())
-        return self._get_obs(), self._get_body(), reward, done, info 
+        return self._get_obs(), self._get_body(), reward, done, info
 
     def _get_obs(self):
         assert len(self._state) == self.k
@@ -325,17 +330,17 @@ def build_env(cfg, k, skip_state_keys, env_type='robosuite', default_camera=''):
             controller_configs = robosuite.load_controller_config(default_controller=cfg['controller'])
         #from robosuite.models.grippers import JacoThreeFingerGripper
         #gripper = JacoThreeFingerGripper
-        env = robosuite.make(env_name=cfg['env_name'], 
-                         robots=cfg['robots'], 
+        env = robosuite.make(env_name=cfg['env_name'],
+                         robots=cfg['robots'],
                          controller_configs=controller_configs,
-                         use_camera_obs=cfg['use_camera_obs'], 
-                         use_object_obs=cfg['use_object_obs'], 
-                         reward_shaping=cfg['reward_shaping'], 
-                         camera_names=cfg['camera_names'], 
-                         horizon=cfg['horizon'], 
-                         control_freq=cfg['control_freq'], 
-                         ignore_done=False, 
-                         hard_reset=False, 
+                         use_camera_obs=cfg['use_camera_obs'],
+                         use_object_obs=cfg['use_object_obs'],
+                         reward_shaping=cfg['reward_shaping'],
+                         camera_names=cfg['camera_names'],
+                         horizon=cfg['horizon'],
+                         control_freq=cfg['control_freq'],
+                         ignore_done=False,
+                         hard_reset=False,
                          reward_scale=1.0,
                          has_offscreen_renderer=True,
                          has_renderer=False,
@@ -352,8 +357,8 @@ def build_model(policy_name, env, cfg):
     state_dim = env.observation_space.shape[0]
     action_dim = env.control_shape
     body_dim = env.body_shape
-    max_action = env.control_max 
-    min_action = env.control_min 
+    max_action = env.control_max
+    min_action = env.control_min
     if 'controller_config_file' in cfg['robot'].keys():
         cfg_file = os.path.abspath(cfg['robot']['controller_config_file'])
         print('loading controller from', cfg_file)
@@ -361,19 +366,19 @@ def build_model(policy_name, env, cfg):
         # 1 for open/close gripper
         min_action = -np.hstack((controller_configs['MIN_MAX_DIFF'], [1]))
         max_action =  np.hstack((controller_configs['MIN_MAX_DIFF'], [1]))
- 
+
     if policy_name == 'TD3':
-        kwargs = {'tau':0.005, 
+        kwargs = {'tau':0.005,
                 'action_dim':action_dim, 'state_dim':state_dim, 'body_dim':body_dim,
-                'policy_noise':0.2, 'max_policy_action':1.0, 
-                'noise_clip':0.5, 'policy_freq':2, 
+                'policy_noise':0.2, 'max_policy_action':1.0,
+                'noise_clip':0.5, 'policy_freq':2,
                 'discount':0.99, 'max_action':max_action, 'min_action':min_action}
         policy = TD3.TD3(**kwargs)
     if policy_name == 'TD3_kinematic':
-        kwargs = {'tau':0.005, 
+        kwargs = {'tau':0.005,
                 'action_dim':action_dim, 'state_dim':state_dim, 'body_dim':body_dim,
-                'policy_noise':0.2, 'max_policy_action':max_action, 
-                'noise_clip':0.5, 'policy_freq':2, 
+                'policy_noise':0.2, 'max_policy_action':max_action,
+                'noise_clip':0.5, 'policy_freq':2,
                 'discount':0.99, 'max_action':max_action, 'min_action':min_action}
         policy = TD3_kinematic.TD3(**kwargs)
 
@@ -381,13 +386,13 @@ def build_model(policy_name, env, cfg):
 
 
 def build_replay_buffer(cfg, env, max_size, cam_dim, seed):
-    env_type = cfg['experiment']['env_type'] 
+    env_type = cfg['experiment']['env_type']
     state_dim = env.observation_space.shape[0]
     action_dim = env.control_shape
     body_dim = env.body_shape
-    replay_buffer = ReplayBuffer(state_dim, body_dim, action_dim, 
-                                 max_size=max_size, 
-                                 cam_dim=cam_dim, 
+    replay_buffer = ReplayBuffer(state_dim, body_dim, action_dim,
+                                 max_size=max_size,
+                                 cam_dim=cam_dim,
                                  seed=seed)
     # this is a bit hacky! TODO
     replay_buffer.k = env.k
@@ -400,7 +405,7 @@ def build_replay_buffer(cfg, env, max_size, cam_dim, seed):
 
     replay_buffer.base_pos = env.bpos
     replay_buffer.base_ori = env.bori
-    # hard code orientation 
+    # hard code orientation
     # TODO add conversion to rotation matrix
     replay_buffer.base_matrix = env.base_matrix
     return replay_buffer
@@ -429,7 +434,7 @@ def get_rot_mat(alpha, beta, gamma):
         gamma  is roll counterclockwise rotation around z axis
     """
     R1 = np.array([[1, 0, 0], [0, np.cos(alpha), -np.sin(alpha)], [0, np.sin(alpha), np.cos(alpha)]])
-    R2 = np.array([[np.cos(beta), 0, np.sin(beta)], [0, 1, 0], [-np.sin(beta), 0, np.cos(beta)]]) 
+    R2 = np.array([[np.cos(beta), 0, np.sin(beta)], [0, 1, 0], [-np.sin(beta), 0, np.cos(beta)]])
     R3 = np.array([[np.cos(gamma),-np.sin(gamma), 0], [np.sin(gamma), np.cos(gamma), 0], [0, 0, 1]])
     return np.dot(R3,R2,R1)
 
@@ -437,19 +442,19 @@ def plot_replay(env, replay_buffer, savebase, frames=False):
 #    env.reset()
 #    joint_positions = np.array([
 #                              [-6.27,3.27,5.17,3.24,0.234,3.54,3.14], # sky
-#                              [ 0,np.pi,np.pi,5.17,0.234,3.54,np.pi/2],  # 
-#                              [ np.pi/2,np.pi,np.pi,5.17,0.234,3.54,np.pi/2],  # 
-#                              [ np.pi,np.pi,np.pi,5.17,0.234,3.54,np.pi/2],  # 
-#                              [ (2*np.pi)/3,np.pi,np.pi,5.17,0.234,3.54,np.pi/2],  # 
-#                              [ 2*np.pi,np.pi,np.pi,5.17,0.234,3.54,np.pi/2],  # 
-#                              [-np.pi*2,np.pi,5.17,.5, 0.234,3.54,np.pi/2],  
-#                               [np.deg2rad(180), np.deg2rad(270), np.deg2rad(90),  np.deg2rad(270),  np.deg2rad(270),  np.deg2rad(270),  np.deg2rad(270)], # tech doc 
+#                              [ 0,np.pi,np.pi,5.17,0.234,3.54,np.pi/2],  #
+#                              [ np.pi/2,np.pi,np.pi,5.17,0.234,3.54,np.pi/2],  #
+#                              [ np.pi,np.pi,np.pi,5.17,0.234,3.54,np.pi/2],  #
+#                              [ (2*np.pi)/3,np.pi,np.pi,5.17,0.234,3.54,np.pi/2],  #
+#                              [ 2*np.pi,np.pi,np.pi,5.17,0.234,3.54,np.pi/2],  #
+#                              [-np.pi*2,np.pi,5.17,.5, 0.234,3.54,np.pi/2],
+#                               [np.deg2rad(180), np.deg2rad(270), np.deg2rad(90),  np.deg2rad(270),  np.deg2rad(270),  np.deg2rad(270),  np.deg2rad(270)], # tech doc
 #                              [4.71,   2.61,  0,     .5,    6.28,  3.7,    3.14],  # sleep
 #                              [-6.27,1,5.17,3.24,0.234,3.54,3.14], # out
 #                             ])
 #
 
-   
+
     if 'robot_dh' in replay_buffer.cfg['robot'].keys():
         robot_name = replay_buffer.cfg['robot']['robot_dh']
     else:
@@ -459,25 +464,25 @@ def plot_replay(env, replay_buffer, savebase, frames=False):
     bm = replay_buffer.base_matrix
     nt = replay_buffer.bodies.shape[0]
     if robot_name.lower() == 'jaco':
-        bm = np.eye(4)
-        bm[:3, :3] = get_rot_mat(alpha=0., beta=np.pi, gamma=np.pi)          
+        #bm = np.eye(4)
+        #bm[:3, :3] = get_rot_mat(alpha=0., beta=np.pi, gamma=np.pi)
         # position is right, but orientation is wrong
         n_joints = 7
     elif 'reacher' in robot_name.lower():
         n_joints = 2
     elif 'panda' in robot_name.lower():
-        n_joints = 7 
+        n_joints = 7
     elif 'sawyer' in robot_name.lower():
         bm = np.eye(4)
-        n_joints = 7 
- 
+        n_joints = 7
+
     joint_positions = replay_buffer.bodies[:,:n_joints]
     if 'panda' in robot_name.lower():
         # todo need an extra transform for flange
         bm = np.eye(4)
-        #bm[:3, :3] = get_rot_mat(alpha=0.0, beta=0, gamma=np.pi)          
+        #bm[:3, :3] = get_rot_mat(alpha=0.0, beta=0, gamma=np.pi)
         joint_positions = np.hstack((joint_positions, np.zeros((nt, 1))))
-        #bm[:3, :3] = get_rot_mat(alpha=np.pi, beta=np.pi, gamma=np.pi)          
+        #bm[:3, :3] = get_rot_mat(alpha=np.pi, beta=np.pi, gamma=np.pi)
         #pm[1,1] = -1
 
 
@@ -495,40 +500,20 @@ def plot_replay(env, replay_buffer, savebase, frames=False):
     #    rdh.np_angle2ee(bm, joint_positions[cnt][None])
     #    # joint pos, eef in world frame, grip site in base frame
     ##embed()
- 
+
     #true_rmat = np.array(true_rmat)
     true_rmat = replay_buffer.bodies[:,n_joints+3:n_joints+3+16].reshape(nt, 4,4)
 
     true_pos = true_rmat[:,:3,3]
     true_euler = np.array([T.mat2euler(a) for a in true_rmat])
     true_quat = np.array([T.mat2quat(a) for a in true_rmat])
- 
+
 
     dh_rmat = rdh.np_angle2ee(bm, joint_positions)
     dh_pos = dh_rmat[:,:3,3]
     dh_euler = np.array([T.mat2euler(a) for a in dh_rmat])
     dh_quat = np.array([T.mat2quat(a) for a in dh_rmat])
-    embed()
 
-#    This fixes rotation matrix for jaco as a hack for euler
-#    bm[:3, :3] = get_rot_mat(alpha=0., beta=np.pi, gamma=np.pi)
-#    post_rm = get_rot_mat(alpha=0.0, beta=np.pi, gamma=0.0)
-#    dh_rmat = rdh.np_angle2ee(bm, joint_positions)
-#    print(bm)
-#    #dh_rmat[:, :3, :3] = np.dot(bm[:, :3, :3],  dh_rmat[:, :3, :3])
-#    dh_pos = dh_rmat[:,:3,3]
-#    dh_rot = [np.dot(r[:3,:3], post_rm) for r in dh_rmat]
-#    for ii in range(len(dh_rot)):
-#        dh_rmat[ii, :3, :3] = dh_rot[ii]
-#    
-#    dh_euler = np.array([T.mat2euler(a) for a in dh_rmat])
-#    dh_euler[:, 0] += np.pi 
-#    dh_euler[:, 0] = normalize_joints(dh_euler[:,0])
-#    dh_quat = np.array([T.mat2quat(a) for a in dh_rmat])
- 
-    #true_ = env.sim.data.get_body_xmat('gripper0_eef')
-    #dh_ori = np.array([quaternion_from_matrix(f_eef[x]) for x in range(n)])
-    #dh_ori = np.array([mat2quat(f_eef[x]) for x in range(f_eef.shape[0])])
     f, ax = plt.subplots(3, figsize=(10,18))
     xdiff = true_pos[:,0]-dh_pos[:,0]
     ydiff = true_pos[:,1]-dh_pos[:,1]
@@ -549,7 +534,7 @@ def plot_replay(env, replay_buffer, savebase, frames=False):
     ax[2].set_title('posz: max diff %.04f'%np.abs(zdiff).max())
     plt.savefig(savebase+'pos.png')
     print('saving', savebase+'pos.png')
- 
+
     f, ax = plt.subplots(4, figsize=(10,18))
     qxdiff = true_quat[:,0]-dh_quat[:,0]
     qydiff = true_quat[:,1]-dh_quat[:,1]
@@ -580,7 +565,7 @@ def plot_replay(env, replay_buffer, savebase, frames=False):
     eydiff = true_euler[:,1]-dh_euler[:,1]
     ezdiff = true_euler[:,2]-dh_euler[:,2]
     print('max qxyzwdiff',np.abs(exdiff).max(), np.abs(eydiff).max(), np.abs(ezdiff).max())
- 
+
     f, ax = plt.subplots(3, figsize=(10,18))
     ax[0].plot(true_euler[:,0], label='sqx')
     ax[0].plot(dh_euler[:,0], label='dhqx')
