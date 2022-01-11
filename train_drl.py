@@ -284,6 +284,77 @@ def rollout():
         replay_buffer = pickle.load(open(replay_file, 'rb'))
     plot_replay(env, replay_buffer, savebase, frames=args.frames)
 
+def rollout_real():
+    if os.path.isdir(args.load_model):
+        load_model = sorted(glob(os.path.join(args.load_model, '*.pt')))[-1]
+        cfg_path = os.path.join(args.load_model, 'cfg.cfg')
+    else:
+        assert args.load_model.endswith('.pt')
+        load_model = args.load_model
+        load_dir, model_name = os.path.split(args.load_model)
+
+    load_dir, model_name = os.path.split(load_model)
+    print('loading model: %s'%load_model)
+    cfg_path = os.path.join(load_dir, 'cfg.txt')
+    if not os.path.exists(cfg_path):
+        cfg_path = os.path.join(load_dir, 'cfg.cfg')
+    print('loading cfg: %s'%cfg_path)
+    cfg = json.load(open(cfg_path))
+    print(cfg)
+    if "kinematic_function" in cfg['experiment'].keys():
+        kinematic_fn = cfg['experiment']['kinematic_function']
+        print("setting kinematic function", kinematic_fn)
+        robot_name = cfg['robot']['robots'][0]
+        if 'robot_dh' in cfg['robot'].keys():
+            robot_dh_name = cfg['robot']['robot_dh']
+        else:
+            robot_dh_name = cfg['robot']['robots'][0]
+
+
+    env_type = cfg['experiment']['env_type']
+    # TODO find skip_state_keys -
+
+    env = build_env(cfg['robot'], cfg['robot']['frame_stack'], skip_state_keys=skip_state_keys, env_type=env_type, default_camera=args.camera)
+    env = Sim2RealWrapper(env)
+    if 'eval_seed' in cfg['experiment'].keys():
+        eval_seed = cfg['experiment']['eval_seed'] + 1000
+    else:
+        eval_seed = cfg['experiment']['seed'] + 1000
+    if args.frames: cam_dim = (240,240,3)
+    else:
+       cam_dim = (0,0,0)
+
+    #if 'eval_replay_buffer_size' in cfg['experiment'].keys():
+    #    eval_replay_buffer_size = cfg['experiment']['eval_replay_buffer_size']
+    #else:
+    eval_replay_buffer_size =  args.max_eval_timesteps*args.num_eval_episodes
+    obs, reward, done, _ = env.step(action)
+    print('running eval for %s steps'%eval_replay_buffer_size)
+
+    policy,  kwargs = build_model(cfg['experiment']['policy_name'], env, cfg)
+
+    if 'kinematic' in cfg['experiment']['policy_name']:
+        policy.kinematic_fn = eval(kinematic_fn)
+        policy.kine_loss_weight = cfg['experiment']['kine_loss_weight']
+        policy.kine_loss_stop = cfg['experiment']['kine_loss_stop']
+    savebase = load_model.replace('.pt','_eval_%06d_S%06d'%(eval_replay_buffer_size, eval_seed))
+    replay_file = savebase+'.pkl'
+    movie_file = savebase+'_%s.mp4' %args.camera
+    if not os.path.exists(replay_file):
+        policy.load(load_model)
+        replay_buffer = build_replay_buffer(cfg, env, eval_replay_buffer_size, cam_dim, eval_seed)
+
+        rewards, replay_buffer = run_eval(env, policy, replay_buffer, kwargs, cfg, cam_dim, savebase)
+        pickle.dump(replay_buffer, open(replay_file, 'wb'))
+        plt.figure()
+        plt.plot(rewards)
+        plt.title('eval episode rewards')
+        plt.savefig(savebase+'.png')
+
+    else:
+        replay_buffer = pickle.load(open(replay_file, 'rb'))
+    plot_replay(env, replay_buffer, savebase, frames=args.frames)
+
 
 if __name__ == '__main__':
     import argparse
@@ -291,6 +362,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--cfg', default='experiments/base_robosuite.cfg')
     parser.add_argument('--eval', action='store_true', default=False)
+    parser.add_argument('--real', action='store_true', default=False)
     parser.add_argument('--frames', action='store_true', default=False)
     parser.add_argument('--camera', default='', choices=['default', 'frontview', 'sideview', 'birdview', 'agentview'])
     parser.add_argument('--load_model', default='')
@@ -299,7 +371,9 @@ if __name__ == '__main__':
     args = parser.parse_args()
     # keys that are robot specific
 
-    if args.eval:
+    if args.eval and args.real:
+        rollout_real()
+    elif args.eval:
         rollout()
     else:
         cfg = json.load(open(args.cfg))
