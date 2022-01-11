@@ -180,7 +180,7 @@ def run_eval(env, policy, replay_buffer, kwargs, cfg, cam_dim, savebase):
             frame_compressed = compress_frame(env.render(camera_name=args.camera, height=h, width=w))
         ep_reward = 0
         e_step = 0
-        while not done:# and e_step < args.max_eval_timesteps:
+        while not done:
             # Select action randomly or according to policy
             action = (
                     policy.select_action(state)
@@ -194,8 +194,8 @@ def run_eval(env, policy, replay_buffer, kwargs, cfg, cam_dim, savebase):
             else:
                 next_state, next_body, reward, done, info = env.step(action) # take a random action
             ep_reward += reward
-            #if e_step+1 == args.max_eval_timesteps:
-            #    done = True
+            if e_step+1 == args.max_eval_timesteps:
+                done = True
             if use_frames:
                 next_frame_compressed = compress_frame(env.render(camera_name=args.camera, height=h, width=w))
                 replay_buffer.add(state, body, action, reward, next_state, next_body, done,
@@ -205,8 +205,8 @@ def run_eval(env, policy, replay_buffer, kwargs, cfg, cam_dim, savebase):
             else:
                 replay_buffer.add(state, body, action, reward, next_state, next_body, done)
             torques.append(env.env.robots[0].torques)
-            print(action)
-            print(torques[-1])
+            #print(action)
+            #print(torques[-1])
             state = next_state
             body = next_body
             num_steps+=1
@@ -254,16 +254,18 @@ def rollout():
     else:
        cam_dim = (0,0,0)
 
-    if 'eval_replay_buffer_size' in cfg['experiment'].keys():
-        eval_replay_buffer_size = cfg['experiment']['eval_replay_buffer_size']
-    else:
-        eval_replay_buffer_size =  env.max_timesteps*args.num_eval_episodes
+    #if 'eval_replay_buffer_size' in cfg['experiment'].keys():
+    #    eval_replay_buffer_size = cfg['experiment']['eval_replay_buffer_size']
+    #else:
+    eval_replay_buffer_size =  args.max_eval_timesteps*args.num_eval_episodes
     print('running eval for %s steps'%eval_replay_buffer_size)
 
     policy,  kwargs = build_model(cfg['experiment']['policy_name'], env, cfg)
 
     if 'kinematic' in cfg['experiment']['policy_name']:
         policy.kinematic_fn = eval(kinematic_fn)
+        policy.kine_loss_weight = cfg['experiment']['kine_loss_weight']
+        policy.kine_loss_stop = cfg['experiment']['kine_loss_stop']
     savebase = load_model.replace('.pt','_eval_%06d_S%06d'%(eval_replay_buffer_size, eval_seed))
     replay_file = savebase+'.pkl'
     movie_file = savebase+'_%s.mp4' %args.camera
@@ -292,8 +294,8 @@ if __name__ == '__main__':
     parser.add_argument('--frames', action='store_true', default=False)
     parser.add_argument('--camera', default='', choices=['default', 'frontview', 'sideview', 'birdview', 'agentview'])
     parser.add_argument('--load_model', default='')
-    parser.add_argument('--num_eval_episodes', default=30, type=int)
-#    parser.add_argument('--max_eval_timesteps', default=100, type=int)
+    parser.add_argument('--num_eval_episodes', default=10, type=int)
+    parser.add_argument('--max_eval_timesteps', default=100, type=int)
     args = parser.parse_args()
     # keys that are robot specific
 
@@ -321,6 +323,8 @@ if __name__ == '__main__':
 
         if "kinematic_function" in cfg['experiment'].keys():
             kinematic_fn = cfg['experiment']['kinematic_function']
+            policy.kine_loss_weight = cfg['experiment']['kine_loss_weight']
+            policy.kine_loss_stop = cfg['experiment']['kine_loss_stop']
             print("setting kinematic function", kinematic_fn)
             policy.kinematic_fn = eval(kinematic_fn)
 

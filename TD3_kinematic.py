@@ -125,7 +125,7 @@ class TD3(object):
                 torch.randn_like(action) * self.policy_noise
             ).clamp(-self.noise_clip, self.noise_clip)
 
-            # doeesnt need clamp bc it has tanh*max action 
+            # doeesnt need clamp bc it has tanh*max action
             next_action = (
                 self.actor_target(next_state) + noise
             )#.clamp(-self.max_policy_action, self.max_policy_action)
@@ -141,7 +141,7 @@ class TD3(object):
         q1_loss = F.mse_loss(current_Q1, target_Q)
         q2_loss = F.mse_loss(current_Q2, target_Q)
         # Compute critic loss
-        critic_loss = q1_loss + q2_loss 
+        critic_loss = q1_loss + q2_loss
 
         # Optimize the critic
         self.critic_optimizer.zero_grad()
@@ -154,11 +154,15 @@ class TD3(object):
         if self.total_it % self.policy_freq == 0:
             # DO DH
             _action = self.actor(state)
-            robot_pose, target_pose = self.kinematic_fn(_action, state, body, next_body)
-            kine_loss = F.mse_loss(robot_pose, target_pose)
-
-            # Compute actor losse
-            actor_loss = -self.critic.Q1(state, _action).mean() + kine_loss
+            if step < self.kine_loss_stop:
+                robot_pose, target_pose = self.kinematic_fn(_action, state, body, next_body)
+                kine_loss = self.kine_loss_weight * F.mse_loss(robot_pose, target_pose)
+                # Compute actor loss
+                actor_loss = -self.critic.Q1(state, _action).mean() + kine_loss
+            else:
+                kine_loss = 0
+                # Compute actor loss
+                actor_loss = -self.critic.Q1(state, _action).mean()
             # Optimize the actor
             self.actor_optimizer.zero_grad()
             actor_loss.backward()
@@ -175,9 +179,9 @@ class TD3(object):
 
 
     def save(self, filepath):
-        model_dict =  {'critic':self.critic.state_dict(), 
-                      'actor':self.actor.state_dict(), 
-                      'critic_optimizer':self.critic_optimizer.state_dict(), 
+        model_dict =  {'critic':self.critic.state_dict(),
+                      'actor':self.actor.state_dict(),
+                      'critic_optimizer':self.critic_optimizer.state_dict(),
                       'actor_optimizer':self.actor_optimizer.state_dict(),
                       'total_it':self.total_it}
         torch.save(model_dict, filepath)
