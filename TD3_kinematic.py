@@ -3,7 +3,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+from torch.nn.utils import clip_grad_norm_
 from IPython import embed
 # Implementation of Twin Delayed Deep Deterministic Policy Gradients (TD3)
 # Paper: https://arxiv.org/abs/1802.09477
@@ -142,6 +142,9 @@ class TD3(object):
         q2_loss = F.mse_loss(current_Q2, target_Q)
         # Compute critic loss
         critic_loss = q1_loss + q2_loss
+        clip_grad_norm_(self.critic_target.parameters(), 5)
+        clip_grad_norm_(self.critic.parameters(), 5)
+        clip_grad_norm_(self.actor_target.parameters(), 5)
 
         # Optimize the critic
         self.critic_optimizer.zero_grad()
@@ -163,6 +166,9 @@ class TD3(object):
                 kine_loss = 0
                 # Compute actor loss
                 actor_loss = -self.critic.Q1(state, _action).mean()
+
+            clip_grad_norm_(self.actor.parameters(), 5)
+            clip_grad_norm_(self.critic.parameters(), 5)
             # Optimize the actor
             self.actor_optimizer.zero_grad()
             actor_loss.backward()
