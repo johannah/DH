@@ -21,6 +21,7 @@ torch.set_num_threads(3)
 import TD3_kinematic
 
 from dh_utils import seed_everything, normalize_joints, skip_state_keys
+from robosuite.wrappers import JacoSim2RealWrapper
 from utils import build_replay_buffer, build_env, build_model, plot_replay, get_rot_mat
 from IPython import embed
 
@@ -191,7 +192,7 @@ def run_eval(env, policy, replay_buffer, kwargs, cfg, cam_dim, savebase):
             if robot_name == 'reacher':
                 target_joint_position = body[:len(action)] + action
                 env.sim.data.qpos[:len(action)] = target_joint_position
-                next_state, next_body, reward, done, info = env.step(0*action)
+                next_state, next_body, reward, done, info = env.step(action)
             else:
                 next_state, next_body, reward, done, info = env.step(action) # take a random action
             ep_reward += reward
@@ -205,7 +206,7 @@ def run_eval(env, policy, replay_buffer, kwargs, cfg, cam_dim, savebase):
                 frame_compressed = next_frame_compressed
             else:
                 replay_buffer.add(state, body, action, reward, next_state, next_body, done)
-            torques.append(env.env.robots[0].torques)
+            #torques.append(env.env.robots[0].torques)
             #print(action)
             #print(torques[-1])
             state = next_state
@@ -316,7 +317,7 @@ def rollout_real():
     # TODO find skip_state_keys -
 
     env = build_env(cfg['robot'], cfg['robot']['frame_stack'], skip_state_keys=skip_state_keys, env_type=env_type, default_camera=args.camera)
-    env = Sim2RealWrapper(env)
+    env.env = JacoSim2RealWrapper(env.env)
     if 'eval_seed' in cfg['experiment'].keys():
         eval_seed = cfg['experiment']['eval_seed'] + 1000
     else:
@@ -329,7 +330,6 @@ def rollout_real():
     #    eval_replay_buffer_size = cfg['experiment']['eval_replay_buffer_size']
     #else:
     eval_replay_buffer_size =  args.max_eval_timesteps*args.num_eval_episodes
-    obs, reward, done, _ = env.step(action)
     print('running eval for %s steps'%eval_replay_buffer_size)
 
     policy,  kwargs = build_model(cfg['experiment']['policy_name'], env, cfg)
