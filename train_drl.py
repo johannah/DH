@@ -20,7 +20,7 @@ import robosuite.utils.macros as macros
 torch.set_num_threads(3)
 import TD3_kinematic
 
-from dh_utils import seed_everything, normalize_joints, skip_state_keys, robotDH
+from dh_utils import seed_everything, normalize_joints, skip_state_keys
 from utils import build_replay_buffer, build_env, build_model, plot_replay, get_rot_mat
 from IPython import embed
 
@@ -30,32 +30,32 @@ eef_rot_offset?
 https://github.com/ARISE-Initiative/robosuite/blob/fc3738ca6361db73376e4c9d8a09b0571167bb2d/robosuite/models/robots/manipulators/manipulator_model.py
 https://github.com/ARISE-Initiative/robosuite/blob/65d3b9ad28d6e7a006e9eef7c5a0330816483be4/robosuite/environments/manipulation/single_arm_env.py#L41
 """
-def reacher_kinematic_fn(action, state, body, next_body):
-    bs,fs = action.shape
-    n_joints = len(robot_dh.npdh['DH_a'])
-    # turn relative action to abs action
-    # env.obs_keys = ['position', to_target', 'velocity']
-    joint_position = action+torch.FloatTensor(state[:,:2])
-    eef_rot = robot_dh.torch_angle2ee(robot_dh.base_matrix, joint_position)
-    eef_pos = eef_rot[:,:2,3]
-    st_target = n_joints+19+3
-    target_pos = next_body[:,st_target:st_target+16].reshape(bs, 4, 4)[:,:2,3]
-    target_pos = torch.FloatTensor(target_pos)
-    return eef_pos, target_pos
-
-def jaco_kinematic_fn(action, state, body, next_body):
-    # last dim is gripper
-    bs = action.shape[0]
-    n_joints = len(robot_dh.npdh['DH_a'])
-    # turn relative action to abs action
-    joint_position = action[:, :n_joints] + torch.FloatTensor(body[:, :n_joints])
-    eef_rot = robot_dh.torch_angle2ee(robot_dh.base_matrix, joint_position)
-    eef_pos = eef_rot[:,:3,3]
-
-    # second body n_joints + 3 + 16 + 3 = 29
-    handle_rot = next_body[:,29:].reshape(bs, 4, 4)
-    handle_pos = torch.FloatTensor(handle_rot[:,:3,3])
-    return eef_pos, handle_pos
+#def reacher_kinematic_fn(action, state, body, next_body):
+#    bs,fs = action.shape
+#    n_joints = len(robot_dh.npdh['DH_a'])
+#    # turn relative action to abs action
+#    # env.obs_keys = ['position', to_target', 'velocity']
+#    joint_position = action+torch.FloatTensor(state[:,:2])
+#    eef_rot = robot_dh.torch_angle2ee(robot_dh.base_matrix, joint_position)
+#    eef_pos = eef_rot[:,:2,3]
+#    st_target = n_joints+19+3
+#    target_pos = next_body[:,st_target:st_target+16].reshape(bs, 4, 4)[:,:2,3]
+#    target_pos = torch.FloatTensor(target_pos)
+#    return eef_pos, target_pos
+#
+#def jaco_kinematic_fn(action, state, body, next_body):
+#    # last dim is gripper
+#    bs = action.shape[0]
+#    n_joints = len(robot_dh.npdh['DH_a'])
+#    # turn relative action to abs action
+#    joint_position = action[:, :n_joints] + torch.FloatTensor(body[:, :n_joints])
+#    eef_rot = robot_dh.torch_angle2ee(robot_dh.base_matrix, joint_position)
+#    eef_pos = eef_rot[:,:3,3]
+#
+#    # second body n_joints + 3 + 16 + 3 = 29
+#    handle_rot = next_body[:,29:].reshape(bs, 4, 4)
+#    handle_pos = torch.FloatTensor(handle_rot[:,:3,3])
+#    return eef_pos, handle_pos
 
 def eval_policy(eval_env, policy, kwargs, eval_episodes=10):
 
@@ -187,6 +187,7 @@ def run_eval(env, policy, replay_buffer, kwargs, cfg, cam_dim, savebase):
                 ).clip(-kwargs['max_action'], kwargs['max_action'])
 
 
+            print(action)
             if robot_name == 'reacher':
                 target_joint_position = body[:len(action)] + action
                 env.sim.data.qpos[:len(action)] = target_joint_position
@@ -232,14 +233,14 @@ def rollout():
     print('loading cfg: %s'%cfg_path)
     cfg = json.load(open(cfg_path))
     print(cfg)
-    if "kinematic_function" in cfg['experiment'].keys():
-        kinematic_fn = cfg['experiment']['kinematic_function']
-        print("setting kinematic function", kinematic_fn)
-        robot_name = cfg['robot']['robots'][0]
-        if 'robot_dh' in cfg['robot'].keys():
-            robot_dh_name = cfg['robot']['robot_dh']
-        else:
-            robot_dh_name = cfg['robot']['robots'][0]
+    #if "kinematic_function" in cfg['experiment'].keys():
+    #    kinematic_fn = cfg['experiment']['kinematic_function']
+    #    print("setting kinematic function", kinematic_fn)
+    #    robot_name = cfg['robot']['robots'][0]
+    #    if 'robot_dh' in cfg['robot'].keys():
+    #        robot_dh_name = cfg['robot']['robot_dh']
+    #    else:
+    #        robot_dh_name = cfg['robot']['robots'][0]
 
 
     env_type = cfg['experiment']['env_type']
@@ -260,12 +261,12 @@ def rollout():
     eval_replay_buffer_size =  args.max_eval_timesteps*args.num_eval_episodes
     print('running eval for %s steps'%eval_replay_buffer_size)
 
-    policy,  kwargs = build_model(cfg['experiment']['policy_name'], env, cfg)
+    policy, kwargs = build_model(cfg['experiment']['policy_name'], env, cfg)
 
-    if 'kinematic' in cfg['experiment']['policy_name']:
-        policy.kinematic_fn = eval(kinematic_fn)
-        policy.kine_loss_weight = cfg['experiment']['kine_loss_weight']
-        policy.kine_loss_stop = cfg['experiment']['kine_loss_stop']
+    #if 'kinematic' in cfg['experiment']['policy_name']:
+    #    policy.kinematic_fn = eval(kinematic_fn)
+    #    policy.kine_loss_weight = cfg['experiment']['kine_loss_weight']
+    #    policy.kine_loss_stop = cfg['experiment']['kine_loss_stop']
     savebase = load_model.replace('.pt','_eval_%06d_S%06d'%(eval_replay_buffer_size, eval_seed))
     replay_file = savebase+'.pkl'
     movie_file = savebase+'_%s.mp4' %args.camera
@@ -301,14 +302,14 @@ def rollout_real():
     print('loading cfg: %s'%cfg_path)
     cfg = json.load(open(cfg_path))
     print(cfg)
-    if "kinematic_function" in cfg['experiment'].keys():
-        kinematic_fn = cfg['experiment']['kinematic_function']
-        print("setting kinematic function", kinematic_fn)
-        robot_name = cfg['robot']['robots'][0]
-        if 'robot_dh' in cfg['robot'].keys():
-            robot_dh_name = cfg['robot']['robot_dh']
-        else:
-            robot_dh_name = cfg['robot']['robots'][0]
+    #if "kinematic_function" in cfg['experiment'].keys():
+    #    kinematic_fn = cfg['experiment']['kinematic_function']
+    #    print("setting kinematic function", kinematic_fn)
+    #    robot_name = cfg['robot']['robots'][0]
+    #    if 'robot_dh' in cfg['robot'].keys():
+    #        robot_dh_name = cfg['robot']['robot_dh']
+    #    else:
+    #        robot_dh_name = cfg['robot']['robots'][0]
 
 
     env_type = cfg['experiment']['env_type']
@@ -333,10 +334,10 @@ def rollout_real():
 
     policy,  kwargs = build_model(cfg['experiment']['policy_name'], env, cfg)
 
-    if 'kinematic' in cfg['experiment']['policy_name']:
-        policy.kinematic_fn = eval(kinematic_fn)
-        policy.kine_loss_weight = cfg['experiment']['kine_loss_weight']
-        policy.kine_loss_stop = cfg['experiment']['kine_loss_stop']
+    #if 'kinematic' in cfg['experiment']['policy_name']:
+    #    policy.kinematic_fn = eval(kinematic_fn)
+    #    policy.kine_loss_weight = cfg['experiment']['kine_loss_weight']
+    #    policy.kine_loss_stop = cfg['experiment']['kine_loss_stop']
     savebase = load_model.replace('.pt','_eval_%06d_S%06d'%(eval_replay_buffer_size, eval_seed))
     replay_file = savebase+'.pkl'
     movie_file = savebase+'_%s.mp4' %args.camera
@@ -387,20 +388,20 @@ if __name__ == '__main__':
         savedir = make_savedir(cfg)
         policy, kwargs = build_model(cfg['experiment']['policy_name'], env, cfg)
         replay_buffer = build_replay_buffer(cfg, env, cfg['experiment']['replay_buffer_size'], cam_dim=(0,0,0), seed=cfg['experiment']['seed'])
-        robot_name = cfg['robot']['robots'][0]
-        if 'robot_dh' in cfg['robot'].keys():
-            robot_dh_name = cfg['robot']['robot_dh']
-        else:
-            robot_dh_name = cfg['robot']['robots'][0]
-        robot_dh = robotDH(robot_name=robot_name, device='cpu')
-        robot_dh.base_matrix = torch.FloatTensor(replay_buffer.base_matrix)
+        #robot_name = cfg['robot']['robots'][0]
+        #if 'robot_dh' in cfg['robot'].keys():
+        #    robot_dh_name = cfg['robot']['robot_dh']
+        #else:
+        #    robot_dh_name = cfg['robot']['robots'][0]
+        #robot_dh = robotDH(robot_name=robot_name, device='cpu')
+        #robot_dh.base_matrix = torch.FloatTensor(replay_buffer.base_matrix)
 
-        if "kinematic_function" in cfg['experiment'].keys():
-            kinematic_fn = cfg['experiment']['kinematic_function']
-            policy.kine_loss_weight = cfg['experiment']['kine_loss_weight']
-            policy.kine_loss_stop = cfg['experiment']['kine_loss_stop']
-            print("setting kinematic function", kinematic_fn)
-            policy.kinematic_fn = eval(kinematic_fn)
+        #if "kinematic_function" in cfg['experiment'].keys():
+        #    kinematic_fn = cfg['experiment']['kinematic_function']
+        #    policy.kine_loss_weight = cfg['experiment']['kine_loss_weight']
+        #    policy.kine_loss_stop = cfg['experiment']['kine_loss_stop']
+        #    print("setting kinematic function", kinematic_fn)
+        #    policy.kinematic_fn = eval(kinematic_fn)
 
         run_train(env, eval_env, policy, replay_buffer, kwargs, savedir, cfg['experiment']['exp_name'], cfg['experiment']['start_training'], cfg['experiment']['eval_freq'], num_steps=0, max_timesteps=cfg['experiment']['max_timesteps'], expl_noise=cfg['experiment']['expl_noise'], batch_size=cfg['experiment']['batch_size'], num_eval_episodes=cfg['experiment']['n_eval_episodes'])
 

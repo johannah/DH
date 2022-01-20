@@ -29,9 +29,10 @@ from robosuite.utils.transform_utils import mat2quat
 
 from dm_control import suite
 
-import TD3, TD3_kinematic
+import TD3, TD3_kinematic, TD3_kinematic_critic
 from replay_buffer import ReplayBuffer, compress_frame
-from dh_utils import robotDH, quaternion_matrix, quaternion_from_matrix, robot_attributes, normalize_joints
+from robosuite.utils.dh_parameters import robotDH
+#from dh_utils import quaternion_matrix, quaternion_from_matrix, robot_attributes, normalize_joints
 
 from IPython import embed;
 
@@ -180,6 +181,7 @@ class EnvStack():
         self._state = deque([], maxlen=k)
         self.body_shape = k*len(self.make_body())
 
+
         if self.env_type == 'robosuite':
             self.control_min = self.env.action_spec[0].min()
             self.control_max = self.env.action_spec[1].max()
@@ -194,7 +196,16 @@ class EnvStack():
                                          [0,0,-1,0],
                                          [0,0,0,1]])
             self.bpos = self.base_matrix[:3, 3]
-            self.bori = quaternion_from_matrix(self.base_matrix)
+            self.bori = T.mat2quat(self.base_matrix)
+            # damping_ratio, kp, action
+            self.n_joints = len(self.env.robots[0].controller.qpos_index)
+            if self.env.robots[0].controller.impedance_mode == 'fixed':
+                self.joint_indexes = np.arange(self.n_joints).astype(np.int)
+            elif self.env.robots[0].controller.impedance_mode == 'variable':
+                self.joint_indexes = np.arange(self.n_joints*2, self.n_joints*3).astype(np.int)
+            elif self.env.robots[0].controller.impedance_mode == 'variable':
+                self.joint_indexes = np.arange(self.n_joints, self.n_joints*2).astype(np.int)
+
 
 
         elif self.env_type == 'dm_control':
@@ -323,10 +334,12 @@ class EnvStack():
 def build_env(cfg, k, skip_state_keys, env_type='robosuite', default_camera=''):
     if env_type == 'robosuite':
         if 'controller_config_file' in cfg.keys():
-            cfg_file = os.path.abspath(cfg['controller_config_file'])
-            print('loading controller from', cfg_file)
-            controller_configs = robosuite.load_controller_config(custom_fpath=cfg_file)
+            cfg_file = os.path.split(cfg['controller_config_file'])[1]
+            cfg_path = os.path.join(os.path.split(robosuite.__file__)[0], 'controllers', 'config', cfg_file)
+            print('loading controller from', cfg_path)
+            controller_configs = robosuite.load_controller_config(custom_fpath=cfg_path)
         else:
+            print('loading DEFAULT controller')
             controller_configs = robosuite.load_controller_config(default_controller=cfg['controller'])
         #from robosuite.models.grippers import JacoThreeFingerGripper
         #gripper = JacoThreeFingerGripper
@@ -357,20 +370,14 @@ def build_model(policy_name, env, cfg):
     state_dim = env.observation_space.shape[0]
     action_dim = env.control_shape
     body_dim = env.body_shape
-    max_action = env.control_max
-    min_action = env.control_min
-    if 'controller_config_file' in cfg['robot'].keys():
-        cfg_file = os.path.abspath(cfg['robot']['controller_config_file'])
-        print('loading controller from', cfg_file)
-        controller_configs = robosuite.load_controller_config(custom_fpath=cfg_file)
-        # 1 for open/close gripper
-        min_action = -np.hstack((controller_configs['MIN_MAX_DIFF'], [1]))
-        max_action =  np.hstack((controller_configs['MIN_MAX_DIFF'], [1]))
+    # 1 for open/close gripper
+    min_action = env.env.robots[0].action_limits[0]
+    max_action =  env.env.robots[0].action_limits[1]
 
     if policy_name == 'TD3':
         kwargs = {'tau':0.005,
                 'action_dim':action_dim, 'state_dim':state_dim, 'body_dim':body_dim,
-                'policy_noise':0.2, 'max_policy_action':1.0,
+                'policy_noise':0.2, 'max_policy_action':max_action,
                 'noise_clip':0.5, 'policy_freq':2,
                 'discount':0.99, 'max_action':max_action, 'min_action':min_action}
         policy = TD3.TD3(**kwargs)
@@ -381,6 +388,20 @@ def build_model(policy_name, env, cfg):
                 'noise_clip':0.5, 'policy_freq':2,
                 'discount':0.99, 'max_action':max_action, 'min_action':min_action}
         policy = TD3_kinematic.TD3(**kwargs)
+    if policy_name == 'TD3_kinematic_critic':
+        robot_name = env.env.robots[0].name
+        device = cfg['experiment']['device']
+        robot_dh = robotDH(robot_name, device)
+        joint_indexes = env.joint_indexes
+
+        kwargs = {'tau':0.005,
+                'action_dim':action_dim, 'state_dim':state_dim, 'body_dim':body_dim,
+                'joint_indexes':joint_indexes,  'robot_dh':robot_dh,
+                'policy_noise':0.2, 'max_policy_action':max_action,
+                'noise_clip':0.5, 'policy_freq':2,
+                  'discount':0.99, 'max_action':max_action, 'min_action':min_action, device:device}
+        policy = TD3_kinematic_critic.TD3(**kwargs)
+
 
     return policy, kwargs
 
@@ -460,7 +481,7 @@ def plot_replay(env, replay_buffer, savebase, frames=False):
     else:
         robot_name = replay_buffer.cfg['robot']['robots'][0]
 
-    rdh = robotDH(robot_name)
+    rdh = robotDH(robot_name, 'cpu')
     bm = replay_buffer.base_matrix
     nt = replay_buffer.bodies.shape[0]
     if robot_name.lower() == 'jaco':
@@ -509,7 +530,7 @@ def plot_replay(env, replay_buffer, savebase, frames=False):
     true_quat = np.array([T.mat2quat(a) for a in true_rmat])
 
 
-    dh_rmat = rdh.np_angle2ee(bm, joint_positions)
+    dh_rmat = rdh.np_angle2ee(joint_positions)
     dh_pos = dh_rmat[:,:3,3]
     dh_euler = np.array([T.mat2euler(a) for a in dh_rmat])
     dh_quat = np.array([T.mat2quat(a) for a in dh_rmat])

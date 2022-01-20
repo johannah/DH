@@ -27,22 +27,31 @@ class Actor(nn.Module):
 
 
 class Critic(nn.Module):
-    def __init__(self, state_dim, action_dim):
+    def __init__(self, state_dim, action_dim, joint_indexes, robot_dh):
         super(Critic, self).__init__()
 
+        self.robot_dh = robot_dh
+        self.joint_indexes = joint_indexes
+        self.n_joints = len(self.joint_indexes)
         # Q1 architecture
-        self.l1 = nn.Linear(state_dim + action_dim, 256)
+        self.l1 = nn.Linear(state_dim + action_dim + 3, 256)
         self.l2 = nn.Linear(256, 256)
         self.l3 = nn.Linear(256, 1)
 
         # Q2 architecture
-        self.l4 = nn.Linear(state_dim + action_dim, 256)
+        self.l4 = nn.Linear(state_dim + action_dim + 3, 256)
         self.l5 = nn.Linear(256, 256)
         self.l6 = nn.Linear(256, 1)
 
+    def kinematic_view_eef(self, action, body):
+        joint_position = action[:, self.joint_indexes] + body[:, :self.n_joints]
+        eef_rot = self.robot_dh.torch_angle2ee(joint_position)
+        eef_pos = eef_rot[:,:3,3]
+        return eef_pos
 
-    def forward(self, state, action):
-        sa = torch.cat([state, action], 1)
+    def forward(self, state, action, body):
+        k_action = self.kinematic_view_eef(action, body)
+        sa = torch.cat([state, action, k_action], 1)
 
         q1 = F.relu(self.l1(sa))
         q1 = F.relu(self.l2(q1))
@@ -53,9 +62,9 @@ class Critic(nn.Module):
         q2 = self.l6(q2)
         return q1, q2
 
-
-    def Q1(self, state, action):
-        sa = torch.cat([state, action], 1)
+    def Q1(self, state, action, body):
+        k_action = self.kinematic_view_eef(action, body)
+        sa = torch.cat([state, action, k_action], 1)
 
         q1 = F.relu(self.l1(sa))
         q1 = F.relu(self.l2(q1))
@@ -68,7 +77,9 @@ class TD3(object):
         self,
         state_dim,
         action_dim,
-        max_policy_action=1.0,
+        joint_indexes,
+        robot_dh,
+        max_policy_action=[1.0],
         discount=0.99,
         tau=0.005,
         policy_noise=0.2,
@@ -78,6 +89,8 @@ class TD3(object):
         **kwargs
     ):
 
+        self.robot_dh = robot_dh
+        self.joint_indexes = joint_indexes
         self.device = device
         self.max_policy_action = torch.Tensor(max_policy_action).to(self.device)
         self.discount = discount
@@ -91,7 +104,7 @@ class TD3(object):
         self.actor_target = copy.deepcopy(self.actor)
         self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=3e-4)
 
-        self.critic = Critic(state_dim, action_dim).to(self.device)
+        self.critic = Critic(state_dim, action_dim, joint_indexes, robot_dh).to(self.device)
         self.critic_target = copy.deepcopy(self.critic)
         self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=3e-4)
 
@@ -107,11 +120,13 @@ class TD3(object):
         self.step = step
         self.total_it += 1
         # Sample replay buffer
-        state, _, action, reward, next_state, _, not_done, _, _ = replay_buffer.sample(batch_size)
+        state, body, action, reward, next_state, next_body, not_done, _, _ = replay_buffer.sample(batch_size)
         state = torch.FloatTensor(state).to(self.device)
+        body = torch.FloatTensor(body).to(self.device)
         action = torch.FloatTensor(action).to(self.device)
         reward = torch.FloatTensor(reward).to(self.device)
         next_state = torch.FloatTensor(next_state).to(self.device)
+        next_body = torch.FloatTensor(next_body).to(self.device)
         not_done = torch.FloatTensor(not_done).to(self.device)
 
         with torch.no_grad():
@@ -126,12 +141,12 @@ class TD3(object):
             ).clamp(-self.max_policy_action, self.max_policy_action)
 
             # Compute the target Q value
-            target_Q1, target_Q2 = self.critic_target(next_state, next_action)
+            target_Q1, target_Q2 = self.critic_target(next_state, next_action, next_body)
             target_Q = torch.min(target_Q1, target_Q2)
             target_Q = reward + not_done * self.discount * target_Q
 
         # Get current Q estimates
-        current_Q1, current_Q2 = self.critic(state, action)
+        current_Q1, current_Q2 = self.critic(state, action, body)
 
         # Compute critic loss
         critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(current_Q2, target_Q)
@@ -146,7 +161,7 @@ class TD3(object):
         if self.total_it % self.policy_freq == 0:
 
             # Compute actor losse
-            actor_loss = -self.critic.Q1(state, self.actor(state)).mean()
+            actor_loss = -self.critic.Q1(state, self.actor(state), body).mean()
             # Optimize the actor
             self.actor_optimizer.zero_grad()
             actor_loss.backward()
